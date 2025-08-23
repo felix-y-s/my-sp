@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { Inventory } from './entities/inventory.entity';
 import { User } from '../user/entities/user.entity';
 import { EventBusService } from '../../infrastructure/redis/event-bus.service';
@@ -20,6 +20,7 @@ export class InventoryService {
     @InjectRepository(User)
     private userRepository: Repository<User>,
     private eventBus: EventBusService,
+    private dataSource: DataSource,
   ) {
     this.initializeEventHandlers();
   }
@@ -63,86 +64,82 @@ export class InventoryService {
     const itemId = eventData.itemId || 'temp-item-id';
     const quantity = eventData.quantity || 1;
 
-    try {
-      // 분산 락 획득 (동시성 제어)
-      const lockKey = `inventory:${userId}`;
-      const lockAcquired = await this.eventBus.acquireLock(lockKey, 5000);
+    // DB 트랜잭션으로 동시성 제어 (ACID 보장)
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-      if (!lockAcquired) {
+    try {
+      // 1. 사용자 조회 (FOR UPDATE로 락 획득)
+      const user = await queryRunner.manager.findOne(User, {
+        where: { id: userId },
+        lock: { mode: 'pessimistic_write' }, // SELECT ... FOR UPDATE
+      });
+      
+      if (!user) {
+        await queryRunner.rollbackTransaction();
         await this.publishReservationFailed(
           orderId,
           userId,
           itemId,
-          '동시 처리 중입니다. 잠시 후 다시 시도해주세요.',
+          '사용자를 찾을 수 없습니다',
         );
         return;
       }
 
-      try {
-        // 1. 사용자 조회
-        const user = await this.userRepository.findOne({
-          where: { id: userId },
-        });
-        if (!user) {
-          await this.publishReservationFailed(
-            orderId,
-            userId,
-            itemId,
-            '사용자를 찾을 수 없습니다',
-          );
-          return;
-        }
+      // 2. 현재 인벤토리 아이템 수 확인 (트랜잭션 내에서)
+      const currentItemCount = await queryRunner.manager.count(Inventory, {
+        where: { userId },
+      });
 
-        // 2. 현재 인벤토리 아이템 수 확인
-        const currentItemCount = await this.inventoryRepository.count({
-          where: { userId },
-        });
-
-        if (!user.hasInventorySpace(currentItemCount)) {
-          await this.publishReservationFailed(
-            orderId,
-            userId,
-            itemId,
-            '인벤토리 공간이 부족합니다',
-          );
-          return;
-        }
-
-        // 3. 인벤토리 공간 예약 (Redis에 임시 저장)
-        const reservationKey = `inventory_reserve:${userId}:${orderId}`;
-        await this.eventBus.setReservation(
-          reservationKey,
-          {
-            userId,
-            orderId,
-            itemId,
-            quantity,
-            reservedAt: new Date(),
-          },
-          300,
-        ); // 5분 TTL
-
-        // 4. 인벤토리 예약 완료 이벤트 발행
-        const inventoryReservedEvent: InventoryReservedEvent = {
+      if (!user.hasInventorySpace(currentItemCount)) {
+        await queryRunner.rollbackTransaction();
+        await this.publishReservationFailed(
           orderId,
           userId,
           itemId,
-          reservedSlots: 1, // 간단한 구현: 1개 아이템 = 1개 슬롯
-          availableSlots: user.maxInventorySlots - currentItemCount - 1,
-        };
-
-        await this.eventBus.publish(
-          EventType.INVENTORY_RESERVED,
-          inventoryReservedEvent,
+          '인벤토리 공간이 부족합니다',
         );
-        this.logger.log(
-          `인벤토리 공간 예약 완료: ${userId} | 주문: ${orderId} | 아이템: ${itemId}`,
-        );
-      } finally {
-        // 분산 락 해제
-        await this.eventBus.releaseLock(lockKey);
+        return;
       }
+
+      // 3. 인벤토리 공간 예약 (Redis에 임시 저장)
+      const reservationKey = `inventory_reserve:${userId}:${orderId}`;
+      await this.eventBus.setReservation(
+        reservationKey,
+        {
+          userId,
+          orderId,
+          itemId,
+          quantity,
+          reservedAt: new Date(),
+        },
+        300,
+      ); // 5분 TTL
+
+      // 트랜잭션 커밋 (인벤토리 공간 검증 완료)
+      await queryRunner.commitTransaction();
+
+      // 4. 인벤토리 예약 완료 이벤트 발행 (트랜잭션 커밋 후)
+      const inventoryReservedEvent: InventoryReservedEvent = {
+        orderId,
+        userId,
+        itemId,
+        reservedSlots: 1, // 간단한 구현: 1개 아이템 = 1개 슬롯
+        availableSlots: user.maxInventorySlots - currentItemCount - 1,
+      };
+
+      await this.eventBus.publish(
+        EventType.INVENTORY_RESERVED,
+        inventoryReservedEvent,
+      );
+      
+      this.logger.log(
+        `인벤토리 공간 예약 완료: ${userId} | 주문: ${orderId} | 아이템: ${itemId}`,
+      );
     } catch (error) {
+      // 트랜잭션 롤백
+      await queryRunner.rollbackTransaction();
       this.logger.error(
         `인벤토리 공간 예약 실패: ${userId} | 주문: ${orderId}`,
         error,
@@ -153,6 +150,9 @@ export class InventoryService {
         itemId,
         '시스템 오류가 발생했습니다',
       );
+    } finally {
+      // QueryRunner 리소스 해제
+      await queryRunner.release();
     }
   }
 
@@ -188,21 +188,18 @@ export class InventoryService {
         return;
       }
 
-      // 분산 락 획득
-      const lockKey = `inventory:${userId}`;
-      const lockAcquired = await this.eventBus.acquireLock(lockKey, 5000);
-
-      if (!lockAcquired) {
-        this.logger.error(`인벤토리 확정 시 락 획득 실패: ${userId}`);
-        return;
-      }
+      // DB 트랜잭션으로 동시성 제어 (ACID 보장)
+      const queryRunner = this.dataSource.createQueryRunner();
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
 
       try {
         const { itemId, quantity } = reservation;
 
-        // 기존 인벤토리 확인 (같은 아이템이 있는지)
-        let inventory = await this.inventoryRepository.findOne({
+        // 기존 인벤토리 확인 (같은 아이템이 있는지, FOR UPDATE로 락 획득)
+        let inventory = await queryRunner.manager.findOne(Inventory, {
           where: { userId, itemId },
+          lock: { mode: 'pessimistic_write' }, // SELECT ... FOR UPDATE
         });
 
         if (inventory) {
@@ -210,16 +207,19 @@ export class InventoryService {
           inventory.increaseQuantity(quantity);
         } else {
           // 새 아이템 추가
-          inventory = this.inventoryRepository.create({
+          inventory = queryRunner.manager.create(Inventory, {
             userId,
             itemId,
             quantity,
           });
         }
 
-        await this.inventoryRepository.save(inventory);
+        await queryRunner.manager.save(inventory);
 
-        // 인벤토리 확정 이벤트 발행
+        // 트랜잭션 커밋
+        await queryRunner.commitTransaction();
+
+        // 인벤토리 확정 이벤트 발행 (트랜잭션 커밋 후)
         await this.eventBus.publish(EventType.INVENTORY_CONFIRMED, {
           orderId,
           userId,
@@ -233,8 +233,11 @@ export class InventoryService {
         this.logger.log(
           `인벤토리 아이템 추가 완료: ${userId} | 주문: ${orderId} | 아이템: ${itemId} | 수량: ${quantity}`,
         );
+      } catch (transactionError) {
+        await queryRunner.rollbackTransaction();
+        throw transactionError;
       } finally {
-        await this.eventBus.releaseLock(lockKey);
+        await queryRunner.release();
       }
     } catch (error) {
       this.logger.error(
@@ -281,6 +284,7 @@ export class InventoryService {
         EventType.INVENTORY_ROLLBACK,
         inventoryRollbackEvent,
       );
+      
       this.logger.log(
         `인벤토리 예약 롤백 완료: ${userId} | 주문: ${orderId} | 사유: ${reason}`,
       );
@@ -339,28 +343,49 @@ export class InventoryService {
     itemId: string,
     quantity: number = 1,
   ): Promise<boolean> {
-    const inventory = await this.inventoryRepository.findOne({
-      where: { userId, itemId },
-    });
+    // DB 트랜잭션으로 동시성 제어 (ACID 보장)
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    if (!inventory || !inventory.hasQuantity(quantity)) {
-      return false;
-    }
+    try {
+      // 인벤토리 조회 (FOR UPDATE로 락 획득)
+      const inventory = await queryRunner.manager.findOne(Inventory, {
+        where: { userId, itemId },
+        lock: { mode: 'pessimistic_write' }, // SELECT ... FOR UPDATE
+      });
 
-    const success = inventory.decreaseQuantity(quantity);
-    if (success) {
-      if (inventory.quantity === 0) {
-        // 수량이 0이 되면 인벤토리에서 제거
-        await this.inventoryRepository.remove(inventory);
-      } else {
-        await this.inventoryRepository.save(inventory);
+      if (!inventory || !inventory.hasQuantity(quantity)) {
+        await queryRunner.rollbackTransaction();
+        return false;
       }
 
-      this.logger.log(
-        `아이템 사용: ${userId} | 아이템: ${itemId} | 사용수량: ${quantity}`,
-      );
-    }
+      const success = inventory.decreaseQuantity(quantity);
+      if (success) {
+        if (inventory.quantity === 0) {
+          // 수량이 0이 되면 인벤토리에서 제거
+          await queryRunner.manager.remove(inventory);
+        } else {
+          await queryRunner.manager.save(inventory);
+        }
 
-    return success;
+        // 트랜잭션 커밋
+        await queryRunner.commitTransaction();
+
+        this.logger.log(
+          `아이템 사용: ${userId} | 아이템: ${itemId} | 사용수량: ${quantity}`,
+        );
+      } else {
+        await queryRunner.rollbackTransaction();
+      }
+
+      return success;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      this.logger.error(`아이템 사용 실패: ${userId} | 아이템: ${itemId}`, error);
+      return false;
+    } finally {
+      await queryRunner.release();
+    }
   }
 }

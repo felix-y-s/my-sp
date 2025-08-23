@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { User } from './entities/user.entity';
 import { Inventory } from '../inventory/entities/inventory.entity';
 import { EventBusService } from '../../infrastructure/redis/event-bus.service';
@@ -21,6 +21,7 @@ export class UserService {
     @InjectRepository(Inventory)
     private inventoryRepository: Repository<Inventory>,
     private eventBus: EventBusService,
+    private dataSource: DataSource,
   ) {
     this.initializeEventHandlers();
   }
@@ -60,116 +61,115 @@ export class UserService {
   private async handleOrderCreated(eventData: any): Promise<void> {
     const { orderId, userId, totalAmount } = eventData;
 
-    try {
-      // 분산 락 획득 (동시성 제어)
-      const lockKey = `user_balance:${userId}`;
-      const lockAcquired = await this.eventBus.acquireLock(lockKey, 5000);
+    // DB 트랜잭션으로 동시성 제어 (ACID 보장)
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-      if (!lockAcquired) {
+    try {
+      // 1. 사용자 검증 (FOR UPDATE로 락 획득)
+      const user = await queryRunner.manager.findOne(User, {
+        where: { id: userId },
+        lock: { mode: 'pessimistic_write' }, // SELECT ... FOR UPDATE
+      });
+      
+      if (!user) {
+        await queryRunner.rollbackTransaction();
         await this.publishValidationFailed(
           orderId,
           userId,
-          '동시 처리 중입니다. 잠시 후 다시 시도해주세요.',
+          '사용자를 찾을 수 없습니다',
         );
         return;
       }
 
-      try {
-        // 1. 사용자 검증
-        const user = await this.userRepository.findOne({
-          where: { id: userId },
-        });
-        if (!user) {
-          await this.publishValidationFailed(
-            orderId,
-            userId,
-            '사용자를 찾을 수 없습니다',
-          );
-          return;
-        }
-
-        if (!user.isActiveUser()) {
-          await this.publishValidationFailed(
-            orderId,
-            userId,
-            '비활성화된 사용자입니다',
-          );
-          return;
-        }
-
-        if (!user.canAfford(totalAmount)) {
-          await this.publishValidationFailed(
-            orderId,
-            userId,
-            `잔고가 부족합니다. (필요: ${totalAmount}, 보유: ${user.balance})`,
-          );
-          return;
-        }
-
-        // 2. 인벤토리 공간 검증
-        const currentItemCount = await this.inventoryRepository.count({
-          where: { userId },
-        });
-
-        if (!user.hasInventorySpace(currentItemCount)) {
-          await this.publishValidationFailed(
-            orderId,
-            userId,
-            '인벤토리 공간이 부족합니다',
-          );
-          return;
-        }
-
-        // 3. 잔고 예약 (Redis에 임시 저장)
-        const reservationKey = `balance_reserve:${userId}:${orderId}`;
-        await this.eventBus.setReservation(
-          reservationKey,
-          {
-            userId,
-            orderId,
-            amount: totalAmount,
-            originalBalance: user.balance,
-          },
-          300,
-        ); // 5분 TTL
-
-        // 4. 실제 잔고 차감 (예약 처리)
-        user.balance = Number(user.balance) - totalAmount;
-        await this.userRepository.save(user);
-
-        // 5. 사용자 검증 완료 이벤트 발행
-        const userValidatedEvent: UserValidatedEvent = {
+      if (!user.isActiveUser()) {
+        await queryRunner.rollbackTransaction();
+        await this.publishValidationFailed(
           orderId,
           userId,
-          userBalance: Number(user.balance),
-          requiredAmount: totalAmount,
-        };
-
-        await this.eventBus.publish(
-          EventType.USER_VALIDATED,
-          userValidatedEvent,
+          '비활성화된 사용자입니다',
         );
-
-        // 6. 결제 예약 완료 이벤트 발행
-        const paymentReservedEvent: PaymentReservedEvent = {
-          orderId,
-          userId,
-          reservedAmount: totalAmount,
-          remainingBalance: Number(user.balance),
-        };
-
-        await this.eventBus.publish(
-          EventType.PAYMENT_RESERVED,
-          paymentReservedEvent,
-        );
-        this.logger.log(
-          `사용자 검증 및 잔고 예약 완료: ${userId} | 주문: ${orderId} | 예약금액: ${totalAmount}`,
-        );
-      } finally {
-        // 분산 락 해제
-        await this.eventBus.releaseLock(lockKey);
+        return;
       }
+
+      if (!user.canAfford(totalAmount)) {
+        await queryRunner.rollbackTransaction();
+        await this.publishValidationFailed(
+          orderId,
+          userId,
+          `잔고가 부족합니다. (필요: ${totalAmount}, 보유: ${user.balance})`,
+        );
+        return;
+      }
+
+      // 2. 인벤토리 공간 검증
+      const currentItemCount = await queryRunner.manager.count(Inventory, {
+        where: { userId },
+      });
+
+      if (!user.hasInventorySpace(currentItemCount)) {
+        await queryRunner.rollbackTransaction();
+        await this.publishValidationFailed(
+          orderId,
+          userId,
+          '인벤토리 공간이 부족합니다',
+        );
+        return;
+      }
+
+      // 3. 잔고 예약 (Redis에 임시 저장)
+      const reservationKey = `balance_reserve:${userId}:${orderId}`;
+      await this.eventBus.setReservation(
+        reservationKey,
+        {
+          userId,
+          orderId,
+          amount: totalAmount,
+          originalBalance: user.balance,
+        },
+        300,
+      ); // 5분 TTL
+
+      // 4. 실제 잔고 차감 (트랜잭션 내에서 원자적 실행)
+      user.balance = Number(user.balance) - totalAmount;
+      await queryRunner.manager.save(user);
+
+      // 트랜잭션 커밋
+      await queryRunner.commitTransaction();
+
+      // 5. 사용자 검증 완료 이벤트 발행 (트랜잭션 커밋 후)
+      const userValidatedEvent: UserValidatedEvent = {
+        orderId,
+        userId,
+        userBalance: Number(user.balance),
+        requiredAmount: totalAmount,
+      };
+
+      await this.eventBus.publish(
+        EventType.USER_VALIDATED,
+        userValidatedEvent,
+      );
+
+      // 6. 결제 예약 완료 이벤트 발행
+      const paymentReservedEvent: PaymentReservedEvent = {
+        orderId,
+        userId,
+        reservedAmount: totalAmount,
+        remainingBalance: Number(user.balance),
+      };
+
+      await this.eventBus.publish(
+        EventType.PAYMENT_RESERVED,
+        paymentReservedEvent,
+      );
+      
+      this.logger.log(
+        `사용자 검증 및 잔고 예약 완료: ${userId} | 주문: ${orderId} | 예약금액: ${totalAmount}`,
+      );
     } catch (error) {
+      // 트랜잭션 롤백
+      await queryRunner.rollbackTransaction();
       this.logger.error(
         `사용자 검증 실패: ${userId} | 주문: ${orderId}`,
         error,
@@ -179,6 +179,9 @@ export class UserService {
         userId,
         '시스템 오류가 발생했습니다',
       );
+    } finally {
+      // QueryRunner 리소스 해제
+      await queryRunner.release();
     }
   }
 
@@ -221,25 +224,26 @@ export class UserService {
         return;
       }
 
-      // 분산 락 획득
-      const lockKey = `user_balance:${userId}`;
-      const lockAcquired = await this.eventBus.acquireLock(lockKey, 5000);
-
-      if (!lockAcquired) {
-        this.logger.error(`롤백 시 락 획득 실패: ${userId}`);
-        return;
-      }
+      // DB 트랜잭션으로 동시성 제어 (ACID 보장)
+      const queryRunner = this.dataSource.createQueryRunner();
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
 
       try {
-        // 사용자 조회 및 잔고 복원
-        const user = await this.userRepository.findOne({
+        // 사용자 조회 및 잔고 복원 (FOR UPDATE로 락 획득)
+        const user = await queryRunner.manager.findOne(User, {
           where: { id: userId },
+          lock: { mode: 'pessimistic_write' }, // SELECT ... FOR UPDATE
         });
+        
         if (user) {
           user.balance = reservation.originalBalance;
-          await this.userRepository.save(user);
+          await queryRunner.manager.save(user);
 
-          // 예약 정보 삭제
+          // 트랜잭션 커밋
+          await queryRunner.commitTransaction();
+
+          // 예약 정보 삭제 (트랜잭션 커밋 후)
           await this.eventBus.deleteReservation(reservationKey);
 
           // 잔고 롤백 이벤트 발행
@@ -254,12 +258,19 @@ export class UserService {
             EventType.PAYMENT_ROLLBACK,
             paymentRollbackEvent,
           );
+          
           this.logger.log(
             `잔고 롤백 완료: ${userId} | 주문: ${orderId} | 복원금액: ${reservation.amount} | 사유: ${reason}`,
           );
+        } else {
+          await queryRunner.rollbackTransaction();
+          this.logger.warn(`사용자를 찾을 수 없습니다: ${userId}`);
         }
+      } catch (transactionError) {
+        await queryRunner.rollbackTransaction();
+        throw transactionError;
       } finally {
-        await this.eventBus.releaseLock(lockKey);
+        await queryRunner.release();
       }
     } catch (error) {
       this.logger.error(`잔고 롤백 실패: ${userId} | 주문: ${orderId}`, error);
