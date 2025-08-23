@@ -54,3 +54,19 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# SQLite 데이터베이스 파일
+*.db
+*.sqlite
+*.sqlite3
+
+# Redis 백업 파일
+dump.rdb
+
+# 로그 파일
+logs/
+*.log
+
+# 백업 파일
+*.backup
+*.bak
