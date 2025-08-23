@@ -13,6 +13,7 @@ import {
   ItemReservedEvent,
   ItemRestoredEvent,
 } from '../../common/events/event-interfaces';
+import { AuditService } from '../../common/services/audit.service';
 
 @Injectable()
 export class ItemService {
@@ -25,6 +26,7 @@ export class ItemService {
     private dataSource: DataSource,
     private reservationService: ItemReservationService,
     private eventBus: EventBusService,
+    private auditService: AuditService,
   ) {
     this.initializeEventHandlers();
   }
@@ -356,8 +358,7 @@ export class ItemService {
       userRoles.includes('admin') || userRoles.includes('inventory_manager');
     if (!hasPermission) {
       // 권한 없는 접근 시도 감사 로그 기록
-      // TODO: AuditService 주입 후 활성화
-      // await this.auditService.logUnauthorizedAccess(adminUserId, 'UPDATE_STOCK', 'Item');
+      await this.auditService.logUnauthorizedAccess(adminUserId, 'UPDATE_STOCK', 'Item');
       throw new Error('재고 관리 권한이 없습니다');
     }
 
@@ -375,15 +376,14 @@ export class ItemService {
     await this.itemRepository.update(itemId, { stock: newStock });
 
     // 4. 변경 이력 기록 (감사 로그)
-    // TODO: AuditService 주입 후 활성화
-    // await this.auditService.logStockChange({
-    //   itemId,
-    //   oldStock,
-    //   newStock,
-    //   changedBy: adminUserId,
-    //   reason,
-    //   timestamp: new Date()
-    // });
+    await this.auditService.logStockChange({
+      itemId,
+      oldStock,
+      newStock,
+      changedBy: adminUserId,
+      reason,
+      timestamp: new Date()
+    });
 
     this.logger.log(
       `관리자 재고 업데이트: ${itemId} | ${oldStock} -> ${newStock} | 관리자: ${adminUserId} | 사유: ${reason}`,

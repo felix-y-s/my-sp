@@ -8,6 +8,9 @@ import configuration from './config/configuration';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 
+// Common Modules
+import { AuditModule } from './common/modules/audit.module';
+
 // Business Modules
 import { OrderModule } from './modules/order/order.module';
 import { UserModule } from './modules/user/user.module';
@@ -44,6 +47,9 @@ import { NotificationModule } from './modules/notification/notification.module';
     // Infrastructure 모듈
     DatabaseModule,
     RedisModule,
+
+    // Common 모듈
+    AuditModule,
 
     // Business 모듈 (Saga Choreography 참여자들)
     OrderModule,

@@ -5,6 +5,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   ItemReservation,
   ReservationStatus,
+  ReservationStatusType,
 } from '../entities/item-reservation.entity';
 import { CreateReservationDto } from '../dto/create-reservation.dto';
 
@@ -76,7 +77,7 @@ export class ItemReservationService {
    */
   async updateReservationStatus(
     id: string,
-    status: ReservationStatus,
+    status: ReservationStatusType,
     reason?: string,
   ): Promise<ItemReservation | null> {
     const reservation = await this.reservationRepository.findOne({
