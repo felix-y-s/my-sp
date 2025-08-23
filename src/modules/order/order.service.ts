@@ -7,10 +7,10 @@ import { Item } from '../item/entities/item.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { EventBusService } from '../../infrastructure/redis/event-bus.service';
 import { EventType } from '../../common/events/event-types.enum';
-import { 
-  OrderCreatedEvent, 
-  OrderCompletedEvent, 
-  OrderFailedEvent 
+import {
+  OrderCreatedEvent,
+  OrderCompletedEvent,
+  OrderFailedEvent,
 } from '../../common/events/event-interfaces';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -35,18 +35,28 @@ export class OrderService {
    */
   private async initializeEventHandlers(): Promise<void> {
     // 결제 완료 시 주문 완료 처리
-    await this.eventBus.subscribe(EventType.PAYMENT_PROCESSED, 
-      this.handlePaymentProcessed.bind(this));
-    
+    await this.eventBus.subscribe(
+      EventType.PAYMENT_PROCESSED,
+      this.handlePaymentProcessed.bind(this),
+    );
+
     // 각 단계별 실패 이벤트 처리
-    await this.eventBus.subscribe(EventType.USER_VALIDATION_FAILED, 
-      this.handleOrderFailed.bind(this));
-    await this.eventBus.subscribe(EventType.INVENTORY_RESERVATION_FAILED, 
-      this.handleOrderFailed.bind(this));
-    await this.eventBus.subscribe(EventType.ITEM_RESERVATION_FAILED, 
-      this.handleOrderFailed.bind(this));
-    await this.eventBus.subscribe(EventType.PAYMENT_FAILED, 
-      this.handleOrderFailed.bind(this));
+    await this.eventBus.subscribe(
+      EventType.USER_VALIDATION_FAILED,
+      this.handleOrderFailed.bind(this),
+    );
+    await this.eventBus.subscribe(
+      EventType.INVENTORY_RESERVATION_FAILED,
+      this.handleOrderFailed.bind(this),
+    );
+    await this.eventBus.subscribe(
+      EventType.ITEM_RESERVATION_FAILED,
+      this.handleOrderFailed.bind(this),
+    );
+    await this.eventBus.subscribe(
+      EventType.PAYMENT_FAILED,
+      this.handleOrderFailed.bind(this),
+    );
   }
 
   /**
@@ -101,13 +111,13 @@ export class OrderService {
    */
   private async handlePaymentProcessed(eventData: any): Promise<void> {
     const { orderId, userId } = eventData;
-    
+
     try {
-      const order = await this.orderRepository.findOne({ 
+      const order = await this.orderRepository.findOne({
         where: { id: orderId },
-        relations: ['item'] 
+        relations: ['item'],
       });
-      
+
       if (!order) {
         this.logger.error(`주문을 찾을 수 없습니다: ${orderId}`);
         return;
@@ -117,7 +127,7 @@ export class OrderService {
       order.updateStatus(OrderStatus.COMPLETED);
       await this.orderRepository.save(order);
 
-      // 주문 완료 이벤트 발행 
+      // 주문 완료 이벤트 발행
       const orderCompletedEvent: OrderCompletedEvent = {
         orderId,
         userId,
@@ -125,9 +135,11 @@ export class OrderService {
         totalAmount: order.totalAmount,
       };
 
-      await this.eventBus.publish(EventType.ORDER_COMPLETED, orderCompletedEvent);
+      await this.eventBus.publish(
+        EventType.ORDER_COMPLETED,
+        orderCompletedEvent,
+      );
       this.logger.log(`주문 완료 처리: ${orderId}`);
-
     } catch (error) {
       this.logger.error(`주문 완료 처리 실패: ${orderId}`, error);
     }
@@ -138,9 +150,11 @@ export class OrderService {
    */
   private async handleOrderFailed(eventData: any): Promise<void> {
     const { orderId, reason } = eventData;
-    
+
     try {
-      const order = await this.orderRepository.findOne({ where: { id: orderId } });
+      const order = await this.orderRepository.findOne({
+        where: { id: orderId },
+      });
       if (!order) {
         this.logger.error(`주문을 찾을 수 없습니다: ${orderId}`);
         return;
@@ -160,7 +174,6 @@ export class OrderService {
 
       await this.eventBus.publish(EventType.ORDER_FAILED, orderFailedEvent);
       this.logger.warn(`주문 실패 처리: ${orderId} - ${reason}`);
-
     } catch (error) {
       this.logger.error(`주문 실패 처리 오류: ${orderId}`, error);
     }

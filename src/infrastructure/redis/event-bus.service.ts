@@ -12,7 +12,7 @@ export class EventBusService {
     private readonly configService: ConfigService,
   ) {
     const redisConfig = this.configService.get('redis');
-    
+
     // 구독 전용 Redis 클라이언트 생성
     this.subscriber = new Redis({
       host: redisConfig.host,
@@ -33,7 +33,7 @@ export class EventBusService {
         data,
         timestamp: new Date(),
       });
-      
+
       await this.redis.publish(eventType, eventData);
       this.logger.log(`이벤트 발행: ${eventType}`, data);
     } catch (error) {
@@ -45,10 +45,13 @@ export class EventBusService {
   /**
    * 이벤트 구독
    */
-  async subscribe(eventType: string, handler: (data: any) => void): Promise<void> {
+  async subscribe(
+    eventType: string,
+    handler: (data: any) => void,
+  ): Promise<void> {
     try {
       await this.subscriber.subscribe(eventType);
-      
+
       this.subscriber.on('message', (channel, message) => {
         if (channel === eventType) {
           try {
@@ -72,12 +75,21 @@ export class EventBusService {
    * 분산 락 구현 (동시성 제어용)
    * TODO: 실제 환경에서는 더 정교한 분산 락 구현 필요
    */
-  async acquireLock(resource: string, timeout: number = 5000): Promise<boolean> {
+  async acquireLock(
+    resource: string,
+    timeout: number = 5000,
+  ): Promise<boolean> {
     const lockKey = `lock:${resource}`;
     const lockValue = Date.now().toString();
-    
+
     try {
-      const result = await this.redis.set(lockKey, lockValue, 'PX', timeout, 'NX');
+      const result = await this.redis.set(
+        lockKey,
+        lockValue,
+        'PX',
+        timeout,
+        'NX',
+      );
       return result === 'OK';
     } catch (error) {
       this.logger.error(`락 획득 실패: ${resource}`, error);
@@ -100,7 +112,11 @@ export class EventBusService {
   /**
    * 임시 상태 저장 (예약 상태 등)
    */
-  async setReservation(key: string, value: any, ttl: number = 300): Promise<void> {
+  async setReservation(
+    key: string,
+    value: any,
+    ttl: number = 300,
+  ): Promise<void> {
     try {
       await this.redis.setex(key, ttl, JSON.stringify(value));
     } catch (error) {

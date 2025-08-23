@@ -1,6 +1,16 @@
 import 'reflect-metadata';
 import { plainToClass, Transform } from 'class-transformer';
-import { IsEnum, IsNumber, IsOptional, IsString, IsBoolean, validateSync, IsUrl, Min, Max } from 'class-validator';
+import {
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsBoolean,
+  validateSync,
+  IsUrl,
+  Min,
+  Max,
+} from 'class-validator';
 
 enum Environment {
   Development = 'development',
@@ -271,11 +281,11 @@ export function validateEnvironment(config: Record<string, unknown>) {
   });
 
   if (errors.length > 0) {
-    const errorMessages = errors.map(error => {
+    const errorMessages = errors.map((error) => {
       const constraints = Object.values(error.constraints || {});
       return `${error.property}: ${constraints.join(', ')}`;
     });
-    
+
     throw new Error(`환경 변수 검증 실패:\n${errorMessages.join('\n')}`);
   }
 
@@ -284,7 +294,7 @@ export function validateEnvironment(config: Record<string, unknown>) {
 
 export function validateProductionEnvironment(config: Record<string, unknown>) {
   const isProduction = config.NODE_ENV === 'production';
-  
+
   if (!isProduction) {
     return config;
   }
@@ -292,17 +302,19 @@ export function validateProductionEnvironment(config: Record<string, unknown>) {
   // 운영 환경에서 필수인 환경 변수들
   const requiredInProduction = [
     'REDIS_PASSWORD',
-    'DATABASE_PASSWORD', 
+    'DATABASE_PASSWORD',
     'JWT_SECRET',
     'DATABASE_HOST',
     'DATABASE_USERNAME',
   ];
 
-  const missingVars = requiredInProduction.filter(varName => !config[varName]);
+  const missingVars = requiredInProduction.filter(
+    (varName) => !config[varName],
+  );
 
   if (missingVars.length > 0) {
     throw new Error(
-      `운영 환경에서 필수 환경 변수가 누락되었습니다: ${missingVars.join(', ')}`
+      `운영 환경에서 필수 환경 변수가 누락되었습니다: ${missingVars.join(', ')}`,
     );
   }
 
@@ -314,7 +326,9 @@ export function validateProductionEnvironment(config: Record<string, unknown>) {
 
   // 데이터베이스 동기화 검증 (운영 환경)
   if (config.DATABASE_SYNCHRONIZE === 'true') {
-    console.warn('⚠️  운영 환경에서 DATABASE_SYNCHRONIZE=true는 권장되지 않습니다');
+    console.warn(
+      '⚠️  운영 환경에서 DATABASE_SYNCHRONIZE=true는 권장되지 않습니다',
+    );
   }
 
   return config;

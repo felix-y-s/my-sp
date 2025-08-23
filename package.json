@@ -19,6 +19,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:saga": "ts-node src/test-saga.ts",
+    "test:saga:enhanced": "ts-node src/scripts/test-enhanced-saga.ts",
     "test:env": "ts-node src/scripts/test-env-validation.ts"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
     "@nestjs/core": "^11.0.1",
     "@nestjs/microservices": "^11.1.6",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/schedule": "^6.0.0",
     "@nestjs/typeorm": "^11.0.0",
     "@types/uuid": "^10.0.0",
     "class-transformer": "^0.5.1",

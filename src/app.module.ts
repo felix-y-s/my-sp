@@ -37,7 +37,6 @@ import { NotificationModule } from './modules/notification/notification.module';
 
         // 2. 운영 환경 추가 검증
         validateProductionEnvironment(config);
-        // FIXME: 여기서 예외 발생시 어떻게 되는거지?
         return validatedConfig;
       },
     }),

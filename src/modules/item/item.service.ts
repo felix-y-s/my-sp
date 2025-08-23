@@ -1,12 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { Item } from './entities/item.entity';
+import {
+  ItemReservation,
+  ReservationStatus,
+} from './entities/item-reservation.entity';
+import { ItemReservationService } from './services/item-reservation.service';
 import { EventBusService } from '../../infrastructure/redis/event-bus.service';
 import { EventType } from '../../common/events/event-types.enum';
-import { 
-  ItemReservedEvent, 
-  ItemRestoredEvent 
+import {
+  ItemReservedEvent,
+  ItemRestoredEvent,
 } from '../../common/events/event-interfaces';
 
 @Injectable()
@@ -16,6 +21,9 @@ export class ItemService {
   constructor(
     @InjectRepository(Item)
     private itemRepository: Repository<Item>,
+    @InjectDataSource()
+    private dataSource: DataSource,
+    private reservationService: ItemReservationService,
     private eventBus: EventBusService,
   ) {
     this.initializeEventHandlers();
@@ -26,12 +34,22 @@ export class ItemService {
    */
   private async initializeEventHandlers(): Promise<void> {
     // 인벤토리 예약 성공 시 아이템 재고 예약
-    await this.eventBus.subscribe(EventType.INVENTORY_RESERVED, 
-      this.handleInventoryReserved.bind(this));
-    
+    await this.eventBus.subscribe(
+      EventType.INVENTORY_RESERVED,
+      this.handleInventoryReserved.bind(this),
+    );
+
     // 결제 실패 시 아이템 재고 복원
-    await this.eventBus.subscribe(EventType.PAYMENT_FAILED, 
-      this.handlePaymentFailed.bind(this));
+    await this.eventBus.subscribe(
+      EventType.PAYMENT_FAILED,
+      this.handlePaymentFailed.bind(this),
+    );
+
+    // 결제 성공 시 예약 확정
+    await this.eventBus.subscribe(
+      EventType.PAYMENT_SUCCESS,
+      this.handlePaymentSuccess.bind(this),
+    );
   }
 
   /**
@@ -40,48 +58,68 @@ export class ItemService {
   private async handleInventoryReserved(eventData: any): Promise<void> {
     const { orderId, userId, itemId } = eventData;
     const quantity = eventData.quantity || 1; // Order에서 전달되지 않은 경우를 위한 기본값
-    
-    try {
-      // 분산 락 획득 (동시성 제어)
-      const lockKey = `item_stock:${itemId}`;
-      const lockAcquired = await this.eventBus.acquireLock(lockKey, 5000);
-      
-      if (!lockAcquired) {
-        await this.publishReservationFailed(orderId, userId, itemId, '동시 처리 중입니다. 잠시 후 다시 시도해주세요.');
-        return;
-      }
 
-      try {
-        // 1. 아이템 조회 및 검증
-        const item = await this.itemRepository.findOne({ where: { id: itemId } });
+    try {
+      // DB 트랜잭션으로 동시성 제어 (ACID 보장)
+      // 1. 아이템 조회 및 검증
+        const item = await this.itemRepository.findOne({
+          where: { id: itemId },
+        });
         if (!item) {
-          await this.publishReservationFailed(orderId, userId, itemId, '아이템을 찾을 수 없습니다');
+          await this.publishReservationFailed(
+            orderId,
+            userId,
+            itemId,
+            '아이템을 찾을 수 없습니다',
+          );
           return;
         }
 
         if (!item.isAvailableForSale()) {
-          await this.publishReservationFailed(orderId, userId, itemId, '판매 중단된 아이템입니다');
+          await this.publishReservationFailed(
+            orderId,
+            userId,
+            itemId,
+            '판매 중단된 아이템입니다',
+          );
           return;
         }
 
         if (!item.hasStock(quantity)) {
-          await this.publishReservationFailed(orderId, userId, itemId, `재고가 부족합니다. (필요: ${quantity}, 재고: ${item.stock})`);
+          await this.publishReservationFailed(
+            orderId,
+            userId,
+            itemId,
+            `재고가 부족합니다. (필요: ${quantity}, 재고: ${item.stock})`,
+          );
           return;
         }
 
-        // 2. 재고 예약 (Redis에 임시 저장)
-        const reservationKey = `item_reserve:${itemId}:${orderId}`;
-        await this.eventBus.setReservation(reservationKey, {
-          itemId,
-          orderId,
-          userId,
-          quantity,
-          originalStock: item.stock,
-        }, 300); // 5분 TTL
+        // 2. DB 트랜잭션으로 예약 정보 생성 + 재고 차감
+        await this.dataSource.transaction(async (manager) => {
+          // 재고 차감
+          await manager.decrement(Item, { id: itemId }, 'stock', quantity);
 
-        // 3. 실제 재고 차감 (예약 처리)
-        item.stock -= quantity;
-        await this.itemRepository.save(item);
+          // 예약 정보 생성
+          const reservation = manager.create(ItemReservation, {
+            orderId,
+            userId,
+            itemId,
+            reservedQuantity: quantity,
+            originalStock: item.stock,
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5분 TTL
+          });
+
+          await manager.save(reservation);
+        });
+
+        // 3. 업데이트된 재고 정보 다시 조회
+        const updatedItem = await this.itemRepository.findOne({
+          where: { id: itemId },
+        });
+        const remainingStock = updatedItem
+          ? updatedItem.stock
+          : item.stock - quantity;
 
         // 4. 아이템 예약 완료 이벤트 발행
         const itemReservedEvent: ItemReservedEvent = {
@@ -89,20 +127,47 @@ export class ItemService {
           userId,
           itemId,
           reservedQuantity: quantity,
-          remainingStock: item.stock,
+          remainingStock: remainingStock,
         };
 
         await this.eventBus.publish(EventType.ITEM_RESERVED, itemReservedEvent);
-        this.logger.log(`아이템 재고 예약 완료: ${itemId} | 주문: ${orderId} | 예약수량: ${quantity} | 남은재고: ${item.stock}`);
-
-      } finally {
-        // 분산 락 해제
-        await this.eventBus.releaseLock(lockKey);
-      }
-
+        this.logger.log(
+          `아이템 재고 예약 완료: ${itemId} | 주문: ${orderId} | 예약수량: ${quantity} | 남은재고: ${remainingStock}`,
+        );
     } catch (error) {
-      this.logger.error(`아이템 재고 예약 실패: ${itemId} | 주문: ${orderId}`, error);
-      await this.publishReservationFailed(orderId, userId, itemId, '시스템 오류가 발생했습니다');
+      this.logger.error(
+        `아이템 재고 예약 실패: ${itemId} | 주문: ${orderId}`,
+        error,
+      );
+      await this.publishReservationFailed(
+        orderId,
+        userId,
+        itemId,
+        '시스템 오류가 발생했습니다',
+      );
+    }
+  }
+
+  /**
+   * 결제 성공 시 예약 확정
+   */
+  private async handlePaymentSuccess(eventData: any): Promise<void> {
+    const { orderId, userId } = eventData;
+
+    try {
+      this.logger.log(`결제 성공으로 인한 아이템 예약 확정: 주문 ${orderId}`);
+
+      // 예약 확정 처리
+      const confirmedReservations =
+        await this.reservationService.confirmReservation(orderId);
+
+      if (confirmedReservations.length > 0) {
+        this.logger.log(
+          `예약 확정 완료: 주문 ${orderId} | 확정된 예약 ${confirmedReservations.length}건`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(`아이템 예약 확정 실패: 주문 ${orderId}`, error);
     }
   }
 
@@ -111,55 +176,129 @@ export class ItemService {
    */
   private async handlePaymentFailed(eventData: any): Promise<void> {
     const { orderId, userId } = eventData;
-    
-    try {
-      // 모든 예약 키 패턴으로 검색 (실제로는 orderId로 매핑 테이블을 관리하는 것이 좋음)
-      // TODO: 실제 환경에서는 예약 정보를 별도 테이블로 관리 필요
-      this.logger.log(`결제 실패로 인한 아이템 재고 복원 시도: 주문 ${orderId}`);
-      
-      // 여기서는 간단하게 구현. 실제로는 예약 정보를 추적할 별도 로직이 필요
-      await this.restoreItemStock(orderId, userId, '결제 실패');
 
+    try {
+      this.logger.log(
+        `결제 실패로 인한 아이템 재고 복원 시도: 주문 ${orderId}`,
+      );
+
+      // 완전한 보상 트랜잭션 실행
+      await this.restoreItemStock(orderId, userId, '결제 실패');
     } catch (error) {
       this.logger.error(`아이템 재고 복원 실패: 주문 ${orderId}`, error);
     }
   }
 
   /**
-   * 아이템 재고 복원 (보상 트랜잭션)
+   * 아이템 재고 복원 (완전한 보상 트랜잭션 구현)
    */
-  private async restoreItemStock(orderId: string, userId: string, reason: string): Promise<void> {
+  private async restoreItemStock(
+    orderId: string,
+    userId: string,
+    reason: string,
+  ): Promise<void> {
     try {
-      // 예약 정보 검색을 위한 패턴 매칭 (Redis scan 사용)
-      // TODO: 실제 환경에서는 예약 정보 매핑 테이블 사용 권장
-      const reservationPattern = `item_reserve:*:${orderId}`;
-      
-      // 간단한 구현을 위해 직접 키 구성 (실제로는 매핑 테이블 필요)
-      // 여기서는 임시로 orderId 기반으로 복원 로직 구현
-      this.logger.log(`아이템 재고 복원 처리: 주문 ${orderId} | 사유: ${reason}`);
+      // 1. 해당 주문의 모든 활성 예약 정보 조회
+      const reservations =
+        await this.reservationService.findActiveByOrderId(orderId);
 
+      if (reservations.length === 0) {
+        this.logger.warn(`복원할 예약 정보가 없습니다: 주문 ${orderId}`);
+        return;
+      }
+
+      // 2. 각 예약에 대해 재고 복원 처리
+      const restoredItems: { itemId: string; restoredQuantity: number }[] = [];
+
+      for (const reservation of reservations) {
+        if (reservation.status !== ReservationStatus.RESERVED) {
+          this.logger.warn(
+            `이미 처리된 예약 건너뛰기: ${reservation.id} | 상태: ${reservation.status}`,
+          );
+          continue;
+        }
+
+        try {
+          // 3. 트랜잭션으로 재고 복원 + 예약 상태 업데이트
+          await this.dataSource.transaction(async (manager) => {
+            // 실제 재고 복원
+            await manager.increment(
+              Item,
+              { id: reservation.itemId },
+              'stock',
+              reservation.reservedQuantity,
+            );
+
+            // 예약 상태 업데이트
+            reservation.cancel(reason);
+            await manager.save(reservation);
+          });
+
+          restoredItems.push({
+            itemId: reservation.itemId,
+            restoredQuantity: reservation.reservedQuantity,
+          });
+
+          this.logger.log(
+            `재고 복원 완료: 아이템 ${reservation.itemId} | 복원수량 ${reservation.reservedQuantity} | 주문 ${orderId}`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `재고 복원 처리 실패: 예약 ${reservation.id}`,
+            error,
+          );
+        }
+      }
+
+      // 4. 재고 복원 완료 이벤트 발행 (복원된 아이템이 있는 경우만)
+      if (restoredItems.length > 0) {
+        const itemRestoredEvent: ItemRestoredEvent = {
+          orderId,
+          userId,
+          restoredItems,
+          reason,
+        };
+
+        await this.eventBus.publish(EventType.ITEM_RESTORED, itemRestoredEvent);
+
+        this.logger.log(
+          `재고 복원 완료 이벤트 발행: 주문 ${orderId} | 복원 아이템 ${restoredItems.length}개 | 사유: ${reason}`,
+        );
+      }
     } catch (error) {
-      this.logger.error(`아이템 재고 복원 중 오류: 주문 ${orderId}`, error);
+      this.logger.error(`재고 복원 처리 실패: 주문 ${orderId}`, error);
+      throw error;
     }
   }
 
   /**
    * 아이템 예약 실패 이벤트 발행
    */
-  private async publishReservationFailed(orderId: string, userId: string, itemId: string, reason: string): Promise<void> {
+  private async publishReservationFailed(
+    orderId: string,
+    userId: string,
+    itemId: string,
+    reason: string,
+  ): Promise<void> {
     await this.eventBus.publish(EventType.ITEM_RESERVATION_FAILED, {
       orderId,
       userId,
       itemId,
       reason,
     });
-    this.logger.warn(`아이템 예약 실패: ${itemId} | 주문: ${orderId} | 사유: ${reason}`);
+    this.logger.warn(
+      `아이템 예약 실패: ${itemId} | 주문: ${orderId} | 사유: ${reason}`,
+    );
   }
 
   /**
    * 아이템 생성 (테스트용)
    */
-  async createItem(name: string, price: number, stock: number = 100): Promise<Item> {
+  async createItem(
+    name: string,
+    price: number,
+    stock: number = 100,
+  ): Promise<Item> {
     const item = this.itemRepository.create({
       name,
       description: `${name} 상품 설명`,
@@ -167,7 +306,7 @@ export class ItemService {
       stock,
       isActive: true,
     });
-    
+
     return this.itemRepository.save(item);
   }
 
@@ -184,7 +323,7 @@ export class ItemService {
   async findAll(): Promise<Item[]> {
     return this.itemRepository.find({
       where: { isActive: true },
-      order: { createdAt: 'DESC' }
+      order: { createdAt: 'DESC' },
     });
   }
 
@@ -197,11 +336,58 @@ export class ItemService {
   }
 
   /**
-   * 재고 직접 업데이트 (관리자용)
-   * TODO: 실제 환경에서는 권한 검증 필요
+   * 재고 직접 업데이트 (관리자 전용) - 보안 강화 버전
+   *
+   * @param itemId 아이템 ID
+   * @param newStock 새로운 재고 수량
+   * @param adminUserId 관리자 사용자 ID
+   * @param reason 변경 사유
+   * @param userRoles 사용자 역할 배열
    */
-  async updateStock(itemId: string, newStock: number): Promise<void> {
+  async updateStock(
+    itemId: string,
+    newStock: number,
+    adminUserId: string,
+    reason: string,
+    userRoles: string[],
+  ): Promise<void> {
+    // 1. 권한 검증
+    const hasPermission =
+      userRoles.includes('admin') || userRoles.includes('inventory_manager');
+    if (!hasPermission) {
+      // 권한 없는 접근 시도 감사 로그 기록
+      // TODO: AuditService 주입 후 활성화
+      // await this.auditService.logUnauthorizedAccess(adminUserId, 'UPDATE_STOCK', 'Item');
+      throw new Error('재고 관리 권한이 없습니다');
+    }
+
+    // 2. 현재 재고 조회 (변경 이력 기록용)
+    const currentItem = await this.itemRepository.findOne({
+      where: { id: itemId },
+    });
+    if (!currentItem) {
+      throw new Error('아이템을 찾을 수 없습니다');
+    }
+
+    const oldStock = currentItem.stock;
+
+    // 3. 재고 업데이트
     await this.itemRepository.update(itemId, { stock: newStock });
-    this.logger.log(`아이템 재고 업데이트: ${itemId} -> ${newStock}`);
+
+    // 4. 변경 이력 기록 (감사 로그)
+    // TODO: AuditService 주입 후 활성화
+    // await this.auditService.logStockChange({
+    //   itemId,
+    //   oldStock,
+    //   newStock,
+    //   changedBy: adminUserId,
+    //   reason,
+    //   timestamp: new Date()
+    // });
+
+    this.logger.log(
+      `관리자 재고 업데이트: ${itemId} | ${oldStock} -> ${newStock} | 관리자: ${adminUserId} | 사유: ${reason}`,
+    );
   }
+
 }

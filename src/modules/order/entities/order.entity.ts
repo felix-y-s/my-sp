@@ -1,14 +1,22 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 import { Item } from '../../item/entities/item.entity';
 
 export enum OrderStatus {
   PENDING = 'PENDING',
-  PROCESSING = 'PROCESSING', 
+  PROCESSING = 'PROCESSING',
   CONFIRMED = 'CONFIRMED',
   COMPLETED = 'COMPLETED',
   FAILED = 'FAILED',
-  CANCELLED = 'CANCELLED'
+  CANCELLED = 'CANCELLED',
 }
 
 @Entity('orders')
@@ -22,10 +30,10 @@ export class Order {
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   totalAmount: number;
 
-  @Column({ 
+  @Column({
     type: 'varchar',
     enum: OrderStatus,
-    default: OrderStatus.PENDING
+    default: OrderStatus.PENDING,
   })
   status: OrderStatus;
 
@@ -39,14 +47,14 @@ export class Order {
   updatedAt: Date;
 
   // 관계 설정
-  @ManyToOne(() => User, user => user.orders)
+  @ManyToOne(() => User, (user) => user.orders)
   @JoinColumn({ name: 'userId' })
   user: User;
 
   @Column({ type: 'varchar' })
   userId: string;
 
-  @ManyToOne(() => Item, item => item.orders)
+  @ManyToOne(() => Item, (item) => item.orders)
   @JoinColumn({ name: 'itemId' })
   item: Item;
 

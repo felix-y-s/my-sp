@@ -28,7 +28,7 @@ export class AppController {
     try {
       // 테스트 사용자 생성
       const user = await this.userService.createUser('testuser', 50000);
-      
+
       // 테스트 아이템 생성
       const sword = await this.itemService.createItem('마법검', 10000, 50);
       const shield = await this.itemService.createItem('방패', 5000, 30);
@@ -40,13 +40,27 @@ export class AppController {
         data: {
           user: { id: user.id, username: user.username, balance: user.balance },
           items: [
-            { id: sword.id, name: sword.name, price: sword.price, stock: sword.stock },
-            { id: shield.id, name: shield.name, price: shield.price, stock: shield.stock },
-            { id: potion.id, name: potion.name, price: potion.price, stock: potion.stock },
-          ]
-        }
+            {
+              id: sword.id,
+              name: sword.name,
+              price: sword.price,
+              stock: sword.stock,
+            },
+            {
+              id: shield.id,
+              name: shield.name,
+              price: shield.price,
+              stock: shield.stock,
+            },
+            {
+              id: potion.id,
+              name: potion.name,
+              price: potion.price,
+              stock: potion.stock,
+            },
+          ],
+        },
       };
-
     } catch (error) {
       return {
         success: false,

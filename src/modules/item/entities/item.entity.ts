@@ -1,4 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  OneToMany,
+} from 'typeorm';
 import { Order } from '../../order/entities/order.entity';
 import { Inventory } from '../../inventory/entities/inventory.entity';
 
@@ -29,10 +36,10 @@ export class Item {
   updatedAt: Date;
 
   // 관계 설정
-  @OneToMany(() => Order, order => order.item)
+  @OneToMany(() => Order, (order) => order.item)
   orders: Order[];
 
-  @OneToMany(() => Inventory, inventory => inventory.item)
+  @OneToMany(() => Inventory, (inventory) => inventory.item)
   inventories: Inventory[];
 
   /**

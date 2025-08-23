@@ -62,8 +62,10 @@ export interface ItemReservedEvent extends BaseEventData {
 }
 
 export interface ItemRestoredEvent extends BaseEventData {
-  itemId: string;
-  restoredQuantity: number;
+  restoredItems: {
+    itemId: string;
+    restoredQuantity: number;
+  }[];
   reason: string;
 }
 
@@ -87,9 +89,9 @@ export interface NotificationEvent extends BaseEventData {
 /**
  * 이벤트 페이로드 타입 맵핑
  */
-export type EventPayload = 
+export type EventPayload =
   | OrderCreatedEvent
-  | OrderCompletedEvent 
+  | OrderCompletedEvent
   | OrderFailedEvent
   | UserValidatedEvent
   | PaymentReservedEvent

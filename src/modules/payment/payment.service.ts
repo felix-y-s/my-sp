@@ -2,9 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventBusService } from '../../infrastructure/redis/event-bus.service';
 import { EventType } from '../../common/events/event-types.enum';
-import { 
-  PaymentProcessedEvent, 
-  PaymentFailedEvent 
+import {
+  PaymentProcessedEvent,
+  PaymentFailedEvent,
 } from '../../common/events/event-interfaces';
 
 @Injectable()
@@ -23,8 +23,10 @@ export class PaymentService {
    */
   private async initializeEventHandlers(): Promise<void> {
     // 아이템 예약 성공 시 결제 처리 시작
-    await this.eventBus.subscribe(EventType.ITEM_RESERVED, 
-      this.handleItemReserved.bind(this));
+    await this.eventBus.subscribe(
+      EventType.ITEM_RESERVED,
+      this.handleItemReserved.bind(this),
+    );
   }
 
   /**
@@ -32,7 +34,7 @@ export class PaymentService {
    */
   private async handleItemReserved(eventData: any): Promise<void> {
     const { orderId, userId } = eventData;
-    
+
     try {
       this.logger.log(`결제 처리 시작: 주문 ${orderId} | 사용자 ${userId}`);
 
@@ -48,17 +50,30 @@ export class PaymentService {
           paymentMethod: paymentResult.method,
         };
 
-        await this.eventBus.publish(EventType.PAYMENT_PROCESSED, paymentProcessedEvent);
-        this.logger.log(`결제 처리 완료: 주문 ${orderId} | 금액 ${paymentResult.amount}`);
-
+        await this.eventBus.publish(
+          EventType.PAYMENT_PROCESSED,
+          paymentProcessedEvent,
+        );
+        this.logger.log(
+          `결제 처리 완료: 주문 ${orderId} | 금액 ${paymentResult.amount}`,
+        );
       } else {
         // 결제 실패 이벤트 발행
-        await this.publishPaymentFailed(orderId, userId, paymentResult.reason || '알 수 없는 오류', paymentResult.amount);
+        await this.publishPaymentFailed(
+          orderId,
+          userId,
+          paymentResult.reason || '알 수 없는 오류',
+          paymentResult.amount,
+        );
       }
-
     } catch (error) {
       this.logger.error(`결제 처리 중 오류: 주문 ${orderId}`, error);
-      await this.publishPaymentFailed(orderId, userId, '시스템 오류가 발생했습니다', 0);
+      await this.publishPaymentFailed(
+        orderId,
+        userId,
+        '시스템 오류가 발생했습니다',
+        0,
+      );
     }
   }
 
@@ -66,7 +81,10 @@ export class PaymentService {
    * 실제 결제 처리 로직 (모의 구현)
    * 실제 환경에서는 PG사 연동 (Stripe, PayPal, 토스 등)
    */
-  private async processPayment(orderId: string, userId: string): Promise<{
+  private async processPayment(
+    orderId: string,
+    userId: string,
+  ): Promise<{
     success: boolean;
     amount: number;
     method: string;
@@ -125,17 +143,17 @@ export class PaymentService {
   private async simulatePaymentDelay(): Promise<void> {
     // 100ms ~ 2초 사이의 랜덤 지연
     const delay = Math.random() * 1900 + 100;
-    await new Promise(resolve => setTimeout(resolve, delay));
+    await new Promise((resolve) => setTimeout(resolve, delay));
   }
 
   /**
    * 결제 실패 이벤트 발행
    */
   private async publishPaymentFailed(
-    orderId: string, 
-    userId: string, 
-    reason: string, 
-    attemptedAmount: number
+    orderId: string,
+    userId: string,
+    reason: string,
+    attemptedAmount: number,
   ): Promise<void> {
     const paymentFailedEvent: PaymentFailedEvent = {
       orderId,
@@ -145,7 +163,9 @@ export class PaymentService {
     };
 
     await this.eventBus.publish(EventType.PAYMENT_FAILED, paymentFailedEvent);
-    this.logger.error(`결제 실패: 주문 ${orderId} | 사유: ${reason} | 시도금액: ${attemptedAmount}`);
+    this.logger.error(
+      `결제 실패: 주문 ${orderId} | 사유: ${reason} | 시도금액: ${attemptedAmount}`,
+    );
   }
 
   /**
@@ -163,7 +183,7 @@ export class PaymentService {
     try {
       const paymentKey = `payment_result:${orderId}`;
       const result = await this.eventBus.getReservation(paymentKey);
-      
+
       if (result) {
         return {
           status: result.success ? 'completed' : 'failed',
@@ -175,7 +195,6 @@ export class PaymentService {
       }
 
       return { status: 'unknown' };
-
     } catch (error) {
       this.logger.error(`결제 상태 조회 실패: ${orderId}`, error);
       return { status: 'unknown' };
@@ -186,10 +205,13 @@ export class PaymentService {
    * 결제 취소/환불 (관리자용)
    * TODO: 실제 환경에서는 PG사 환불 API 호출
    */
-  async refundPayment(orderId: string, reason: string = '관리자 환불'): Promise<boolean> {
+  async refundPayment(
+    orderId: string,
+    reason: string = '관리자 환불',
+  ): Promise<boolean> {
     try {
       this.logger.log(`결제 환불 처리: 주문 ${orderId} | 사유: ${reason}`);
-      
+
       // TODO: 실제 PG사 환불 API 호출
       // TODO: 환불 결과에 따른 사용자 잔고 복원
       // TODO: 인벤토리에서 아이템 제거
@@ -203,7 +225,6 @@ export class PaymentService {
       });
 
       return true;
-
     } catch (error) {
       this.logger.error(`결제 환불 실패: ${orderId}`, error);
       return false;
@@ -221,14 +242,21 @@ export class PaymentService {
       paymentMethod: 'test',
     };
 
-    await this.eventBus.publish(EventType.PAYMENT_PROCESSED, paymentProcessedEvent);
+    await this.eventBus.publish(
+      EventType.PAYMENT_PROCESSED,
+      paymentProcessedEvent,
+    );
     this.logger.log(`결제 강제 성공 처리: 주문 ${orderId}`);
   }
 
   /**
    * 테스트용: 특정 주문의 결제 강제 실패
    */
-  async forcePaymentFailure(orderId: string, userId: string, reason: string = '테스트 실패'): Promise<void> {
+  async forcePaymentFailure(
+    orderId: string,
+    userId: string,
+    reason: string = '테스트 실패',
+  ): Promise<void> {
     await this.publishPaymentFailed(orderId, userId, reason, 1000);
   }
 }

@@ -8,7 +8,7 @@ export enum EventType {
   ORDER_FAILED = 'order.failed',
   ORDER_CANCELLED = 'order.cancelled',
 
-  // 사용자/결제 관련 이벤트  
+  // 사용자/결제 관련 이벤트
   USER_VALIDATED = 'user.validated',
   USER_VALIDATION_FAILED = 'user.validation.failed',
   PAYMENT_RESERVED = 'payment.reserved',
@@ -22,7 +22,7 @@ export enum EventType {
   INVENTORY_CONFIRMED = 'inventory.confirmed',
   INVENTORY_ROLLBACK = 'inventory.rollback',
 
-  // 아이템 관련 이벤트  
+  // 아이템 관련 이벤트
   ITEM_RESERVED = 'item.reserved',
   ITEM_RESERVATION_FAILED = 'item.reservation.failed',
   ITEM_DEDUCTED = 'item.deducted',
@@ -30,6 +30,7 @@ export enum EventType {
 
   // 결제 처리 이벤트
   PAYMENT_PROCESSED = 'payment.processed',
+  PAYMENT_SUCCESS = 'payment.success',
   PAYMENT_FAILED = 'payment.failed',
 
   // 알림 관련 이벤트

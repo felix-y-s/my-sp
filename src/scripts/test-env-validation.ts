@@ -3,7 +3,10 @@
  */
 
 import { config } from 'dotenv';
-import { validateEnvironment, validateProductionEnvironment } from '../config/env.validation';
+import {
+  validateEnvironment,
+  validateProductionEnvironment,
+} from '../config/env.validation';
 
 async function testEnvironmentValidation() {
   console.log('🧪 환경 변수 검증 테스트 시작\n');
@@ -16,7 +19,9 @@ async function testEnvironmentValidation() {
     console.log('   개발 환경 검증 성공!');
     console.log(`   환경: ${validConfig.NODE_ENV}`);
     console.log(`   포트: ${validConfig.PORT}`);
-    console.log(`   Redis: ${validConfig.REDIS_HOST}:${validConfig.REDIS_PORT}\n`);
+    console.log(
+      `   Redis: ${validConfig.REDIS_HOST}:${validConfig.REDIS_PORT}\n`,
+    );
   } catch (error) {
     console.error('   개발 환경 검증 실패:', error.message);
   }
@@ -90,7 +95,7 @@ async function testEnvironmentValidation() {
 
     const validConfig = validateEnvironment(completeProdEnv);
     validateProductionEnvironment(completeProdEnv);
-    
+
     console.log('   ✅ 운영 환경 검증 성공!');
     console.log(`   환경: ${validConfig.NODE_ENV}`);
     console.log(`   데이터베이스: ${validConfig.DATABASE_TYPE}`);
@@ -104,25 +109,33 @@ async function testEnvironmentValidation() {
   try {
     const typeConversionEnv = {
       NODE_ENV: 'development',
-      PORT: '3001',  // string -> number
+      PORT: '3001', // string -> number
       REDIS_HOST: 'localhost',
-      REDIS_PORT: '6380',  // string -> number
+      REDIS_PORT: '6380', // string -> number
       DATABASE_TYPE: 'sqlite',
       DATABASE_NAME: 'test.db',
-      DATABASE_SYNCHRONIZE: 'true',  // string -> boolean
-      DATABASE_LOGGING: 'false',  // string -> boolean
-      PAYMENT_SUCCESS_RATE: '0.95',  // string -> number
-      SAGA_TIMEOUT: '180000',  // string -> number
+      DATABASE_SYNCHRONIZE: 'true', // string -> boolean
+      DATABASE_LOGGING: 'false', // string -> boolean
+      PAYMENT_SUCCESS_RATE: '0.95', // string -> number
+      SAGA_TIMEOUT: '180000', // string -> number
       JWT_SECRET: 'development-secret-key',
     };
 
     const validConfig = validateEnvironment(typeConversionEnv);
-    
+
     console.log('   ✅ 타입 변환 성공!');
-    console.log(`   포트 (number): ${validConfig.PORT} (${typeof validConfig.PORT})`);
-    console.log(`   Redis 포트 (number): ${validConfig.REDIS_PORT} (${typeof validConfig.REDIS_PORT})`);
-    console.log(`   동기화 (boolean): ${validConfig.DATABASE_SYNCHRONIZE} (${typeof validConfig.DATABASE_SYNCHRONIZE})`);
-    console.log(`   성공률 (number): ${validConfig.PAYMENT_SUCCESS_RATE} (${typeof validConfig.PAYMENT_SUCCESS_RATE})`);
+    console.log(
+      `   포트 (number): ${validConfig.PORT} (${typeof validConfig.PORT})`,
+    );
+    console.log(
+      `   Redis 포트 (number): ${validConfig.REDIS_PORT} (${typeof validConfig.REDIS_PORT})`,
+    );
+    console.log(
+      `   동기화 (boolean): ${validConfig.DATABASE_SYNCHRONIZE} (${typeof validConfig.DATABASE_SYNCHRONIZE})`,
+    );
+    console.log(
+      `   성공률 (number): ${validConfig.PAYMENT_SUCCESS_RATE} (${typeof validConfig.PAYMENT_SUCCESS_RATE})`,
+    );
   } catch (error) {
     console.error('   타입 변환 실패:', error.message);
   }

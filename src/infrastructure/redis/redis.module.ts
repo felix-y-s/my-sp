@@ -10,7 +10,7 @@ import Redis from 'ioredis';
       provide: 'REDIS_CLIENT',
       useFactory: (configService: ConfigService) => {
         const redisConfig = configService.get('redis');
-        
+
         // Redis 연결 설정
         const redis = new Redis({
           host: redisConfig.host,
@@ -21,7 +21,9 @@ import Redis from 'ioredis';
         });
 
         redis.on('connect', () => {
-          console.log(`Redis 연결 성공: ${redisConfig.host}:${redisConfig.port}`);
+          console.log(
+            `Redis 연결 성공: ${redisConfig.host}:${redisConfig.port}`,
+          );
         });
 
         redis.on('error', (err) => {

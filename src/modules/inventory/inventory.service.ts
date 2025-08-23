@@ -5,9 +5,9 @@ import { Inventory } from './entities/inventory.entity';
 import { User } from '../user/entities/user.entity';
 import { EventBusService } from '../../infrastructure/redis/event-bus.service';
 import { EventType } from '../../common/events/event-types.enum';
-import { 
-  InventoryReservedEvent, 
-  InventoryRollbackEvent 
+import {
+  InventoryReservedEvent,
+  InventoryRollbackEvent,
 } from '../../common/events/event-interfaces';
 
 @Injectable()
@@ -29,20 +29,28 @@ export class InventoryService {
    */
   private async initializeEventHandlers(): Promise<void> {
     // 결제 예약 성공 시 인벤토리 공간 예약
-    await this.eventBus.subscribe(EventType.PAYMENT_RESERVED, 
-      this.handlePaymentReserved.bind(this));
-    
+    await this.eventBus.subscribe(
+      EventType.PAYMENT_RESERVED,
+      this.handlePaymentReserved.bind(this),
+    );
+
     // 아이템 예약 실패 시 인벤토리 예약 롤백
-    await this.eventBus.subscribe(EventType.ITEM_RESERVATION_FAILED, 
-      this.handleItemReservationFailed.bind(this));
-    
+    await this.eventBus.subscribe(
+      EventType.ITEM_RESERVATION_FAILED,
+      this.handleItemReservationFailed.bind(this),
+    );
+
     // 결제 실패 시 인벤토리 예약 롤백
-    await this.eventBus.subscribe(EventType.PAYMENT_FAILED, 
-      this.handlePaymentFailed.bind(this));
+    await this.eventBus.subscribe(
+      EventType.PAYMENT_FAILED,
+      this.handlePaymentFailed.bind(this),
+    );
 
     // 결제 성공 시 인벤토리에 아이템 추가
-    await this.eventBus.subscribe(EventType.PAYMENT_PROCESSED, 
-      this.handlePaymentProcessed.bind(this));
+    await this.eventBus.subscribe(
+      EventType.PAYMENT_PROCESSED,
+      this.handlePaymentProcessed.bind(this),
+    );
   }
 
   /**
@@ -54,44 +62,65 @@ export class InventoryService {
     // 간단한 구현을 위해 Order 조회 로직 생략하고 eventData에서 직접 사용
     const itemId = eventData.itemId || 'temp-item-id';
     const quantity = eventData.quantity || 1;
-    
+
     try {
       // 분산 락 획득 (동시성 제어)
       const lockKey = `inventory:${userId}`;
       const lockAcquired = await this.eventBus.acquireLock(lockKey, 5000);
-      
+
       if (!lockAcquired) {
-        await this.publishReservationFailed(orderId, userId, itemId, '동시 처리 중입니다. 잠시 후 다시 시도해주세요.');
+        await this.publishReservationFailed(
+          orderId,
+          userId,
+          itemId,
+          '동시 처리 중입니다. 잠시 후 다시 시도해주세요.',
+        );
         return;
       }
 
       try {
         // 1. 사용자 조회
-        const user = await this.userRepository.findOne({ where: { id: userId } });
+        const user = await this.userRepository.findOne({
+          where: { id: userId },
+        });
         if (!user) {
-          await this.publishReservationFailed(orderId, userId, itemId, '사용자를 찾을 수 없습니다');
+          await this.publishReservationFailed(
+            orderId,
+            userId,
+            itemId,
+            '사용자를 찾을 수 없습니다',
+          );
           return;
         }
 
         // 2. 현재 인벤토리 아이템 수 확인
         const currentItemCount = await this.inventoryRepository.count({
-          where: { userId }
+          where: { userId },
         });
 
         if (!user.hasInventorySpace(currentItemCount)) {
-          await this.publishReservationFailed(orderId, userId, itemId, '인벤토리 공간이 부족합니다');
+          await this.publishReservationFailed(
+            orderId,
+            userId,
+            itemId,
+            '인벤토리 공간이 부족합니다',
+          );
           return;
         }
 
         // 3. 인벤토리 공간 예약 (Redis에 임시 저장)
         const reservationKey = `inventory_reserve:${userId}:${orderId}`;
-        await this.eventBus.setReservation(reservationKey, {
-          userId,
-          orderId,
-          itemId,
-          quantity,
-          reservedAt: new Date(),
-        }, 300); // 5분 TTL
+        await this.eventBus.setReservation(
+          reservationKey,
+          {
+            userId,
+            orderId,
+            itemId,
+            quantity,
+            reservedAt: new Date(),
+          },
+          300,
+        ); // 5분 TTL
 
         // 4. 인벤토리 예약 완료 이벤트 발행
         const inventoryReservedEvent: InventoryReservedEvent = {
@@ -102,17 +131,28 @@ export class InventoryService {
           availableSlots: user.maxInventorySlots - currentItemCount - 1,
         };
 
-        await this.eventBus.publish(EventType.INVENTORY_RESERVED, inventoryReservedEvent);
-        this.logger.log(`인벤토리 공간 예약 완료: ${userId} | 주문: ${orderId} | 아이템: ${itemId}`);
-
+        await this.eventBus.publish(
+          EventType.INVENTORY_RESERVED,
+          inventoryReservedEvent,
+        );
+        this.logger.log(
+          `인벤토리 공간 예약 완료: ${userId} | 주문: ${orderId} | 아이템: ${itemId}`,
+        );
       } finally {
         // 분산 락 해제
         await this.eventBus.releaseLock(lockKey);
       }
-
     } catch (error) {
-      this.logger.error(`인벤토리 공간 예약 실패: ${userId} | 주문: ${orderId}`, error);
-      await this.publishReservationFailed(orderId, userId, itemId, '시스템 오류가 발생했습니다');
+      this.logger.error(
+        `인벤토리 공간 예약 실패: ${userId} | 주문: ${orderId}`,
+        error,
+      );
+      await this.publishReservationFailed(
+        orderId,
+        userId,
+        itemId,
+        '시스템 오류가 발생했습니다',
+      );
     }
   }
 
@@ -135,21 +175,23 @@ export class InventoryService {
    */
   private async handlePaymentProcessed(eventData: any): Promise<void> {
     const { orderId, userId } = eventData;
-    
+
     try {
       // 예약 정보 조회
       const reservationKey = `inventory_reserve:${userId}:${orderId}`;
       const reservation = await this.eventBus.getReservation(reservationKey);
-      
+
       if (!reservation) {
-        this.logger.warn(`인벤토리 예약 정보를 찾을 수 없습니다: ${reservationKey}`);
+        this.logger.warn(
+          `인벤토리 예약 정보를 찾을 수 없습니다: ${reservationKey}`,
+        );
         return;
       }
 
       // 분산 락 획득
       const lockKey = `inventory:${userId}`;
       const lockAcquired = await this.eventBus.acquireLock(lockKey, 5000);
-      
+
       if (!lockAcquired) {
         this.logger.error(`인벤토리 확정 시 락 획득 실패: ${userId}`);
         return;
@@ -160,7 +202,7 @@ export class InventoryService {
 
         // 기존 인벤토리 확인 (같은 아이템이 있는지)
         let inventory = await this.inventoryRepository.findOne({
-          where: { userId, itemId }
+          where: { userId, itemId },
         });
 
         if (inventory) {
@@ -187,31 +229,39 @@ export class InventoryService {
 
         // 예약 정보 삭제
         await this.eventBus.deleteReservation(reservationKey);
-        
-        this.logger.log(`인벤토리 아이템 추가 완료: ${userId} | 주문: ${orderId} | 아이템: ${itemId} | 수량: ${quantity}`);
 
+        this.logger.log(
+          `인벤토리 아이템 추가 완료: ${userId} | 주문: ${orderId} | 아이템: ${itemId} | 수량: ${quantity}`,
+        );
       } finally {
         await this.eventBus.releaseLock(lockKey);
       }
-
     } catch (error) {
-      this.logger.error(`인벤토리 아이템 추가 실패: ${userId} | 주문: ${orderId}`, error);
+      this.logger.error(
+        `인벤토리 아이템 추가 실패: ${userId} | 주문: ${orderId}`,
+        error,
+      );
     }
   }
 
   /**
    * 인벤토리 예약 롤백 (보상 트랜잭션)
    */
-  private async rollbackInventoryReservation(eventData: any, reason: string): Promise<void> {
+  private async rollbackInventoryReservation(
+    eventData: any,
+    reason: string,
+  ): Promise<void> {
     const { orderId, userId } = eventData;
-    
+
     try {
       // 예약 정보 조회
       const reservationKey = `inventory_reserve:${userId}:${orderId}`;
       const reservation = await this.eventBus.getReservation(reservationKey);
-      
+
       if (!reservation) {
-        this.logger.warn(`인벤토리 예약 정보를 찾을 수 없습니다: ${reservationKey}`);
+        this.logger.warn(
+          `인벤토리 예약 정보를 찾을 수 없습니다: ${reservationKey}`,
+        );
         return;
       }
 
@@ -227,25 +277,39 @@ export class InventoryService {
         reason,
       };
 
-      await this.eventBus.publish(EventType.INVENTORY_ROLLBACK, inventoryRollbackEvent);
-      this.logger.log(`인벤토리 예약 롤백 완료: ${userId} | 주문: ${orderId} | 사유: ${reason}`);
-
+      await this.eventBus.publish(
+        EventType.INVENTORY_ROLLBACK,
+        inventoryRollbackEvent,
+      );
+      this.logger.log(
+        `인벤토리 예약 롤백 완료: ${userId} | 주문: ${orderId} | 사유: ${reason}`,
+      );
     } catch (error) {
-      this.logger.error(`인벤토리 예약 롤백 실패: ${userId} | 주문: ${orderId}`, error);
+      this.logger.error(
+        `인벤토리 예약 롤백 실패: ${userId} | 주문: ${orderId}`,
+        error,
+      );
     }
   }
 
   /**
    * 인벤토리 예약 실패 이벤트 발행
    */
-  private async publishReservationFailed(orderId: string, userId: string, itemId: string, reason: string): Promise<void> {
+  private async publishReservationFailed(
+    orderId: string,
+    userId: string,
+    itemId: string,
+    reason: string,
+  ): Promise<void> {
     await this.eventBus.publish(EventType.INVENTORY_RESERVATION_FAILED, {
       orderId,
       userId,
       itemId,
       reason,
     });
-    this.logger.warn(`인벤토리 예약 실패: ${userId} | 주문: ${orderId} | 사유: ${reason}`);
+    this.logger.warn(
+      `인벤토리 예약 실패: ${userId} | 주문: ${orderId} | 사유: ${reason}`,
+    );
   }
 
   /**
@@ -255,7 +319,7 @@ export class InventoryService {
     return this.inventoryRepository.find({
       where: { userId },
       relations: ['item'],
-      order: { createdAt: 'DESC' }
+      order: { createdAt: 'DESC' },
     });
   }
 
@@ -270,9 +334,13 @@ export class InventoryService {
    * 인벤토리 아이템 사용/삭제 (게임에서 아이템 사용 시)
    * TODO: 실제 환경에서는 아이템 사용 로직과 연계 필요
    */
-  async useItem(userId: string, itemId: string, quantity: number = 1): Promise<boolean> {
+  async useItem(
+    userId: string,
+    itemId: string,
+    quantity: number = 1,
+  ): Promise<boolean> {
     const inventory = await this.inventoryRepository.findOne({
-      where: { userId, itemId }
+      where: { userId, itemId },
     });
 
     if (!inventory || !inventory.hasQuantity(quantity)) {
@@ -287,8 +355,10 @@ export class InventoryService {
       } else {
         await this.inventoryRepository.save(inventory);
       }
-      
-      this.logger.log(`아이템 사용: ${userId} | 아이템: ${itemId} | 사용수량: ${quantity}`);
+
+      this.logger.log(
+        `아이템 사용: ${userId} | 아이템: ${itemId} | 사용수량: ${quantity}`,
+      );
     }
 
     return success;

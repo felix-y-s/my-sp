@@ -1,4 +1,13 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, Unique } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
+  Unique,
+} from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 import { Item } from '../../item/entities/item.entity';
 
@@ -18,14 +27,14 @@ export class Inventory {
   updatedAt: Date;
 
   // 관계 설정
-  @ManyToOne(() => User, user => user.inventories)
+  @ManyToOne(() => User, (user) => user.inventories)
   @JoinColumn({ name: 'userId' })
   user: User;
 
   @Column({ type: 'varchar' })
   userId: string;
 
-  @ManyToOne(() => Item, item => item.inventories)
+  @ManyToOne(() => Item, (item) => item.inventories)
   @JoinColumn({ name: 'itemId' })
   item: Item;
 
