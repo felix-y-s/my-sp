@@ -61,12 +61,17 @@ export class AuditLog {
   })
   userAgent: string;
 
-  @CreateDateColumn({ comment: '로그 생성 시각' })
+  @CreateDateColumn({ 
+    type: 'timestamptz',
+    comment: '로그 생성 시각' 
+  })
   timestamp: Date;
 
   @Column({
-    type: 'varchar',
-    length: 20,
+    type: 'enum',
+    enum: ['success', 'failed', 'blocked'],
+    enumName: 'audit_status_enum',
+    
     default: 'success',
     comment: '결과 상태 (success, failed, blocked)',
   })
@@ -76,7 +81,7 @@ export class AuditLog {
    * 중요도 수준 (1-5, 5가 가장 중요)
    */
   @Column({
-    type: 'tinyint',
+    type: 'smallint',
     default: 3,
     comment: '중요도 (1-5)',
   })

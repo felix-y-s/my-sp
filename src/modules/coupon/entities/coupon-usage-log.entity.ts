@@ -46,7 +46,10 @@ export class CouponUsageLog {
   })
   finalAmount: number;
 
-  @CreateDateColumn({ comment: '쿠폰 사용일시' })
+  @CreateDateColumn({ 
+    type: 'timestamptz',
+    comment: '쿠폰 사용일시' 
+  })
   usedAt: Date;
 
   @Column({ type: 'boolean', default: false, comment: '사용 확정 여부' })

@@ -10,20 +10,20 @@ import {
 import { DiscountType, ApplicableType, ValidityType } from '../enums';
 
 @Entity('coupons')
-@Check('CHK_discount_value_positive', '"discount_value" > 0')
-@Check('CHK_min_order_amount_non_negative', '"min_order_amount" >= 0')
+@Check('CHK_discount_value_positive', '"discountValue" > 0')
+@Check('CHK_min_order_amount_non_negative', '"minOrderAmount" >= 0')
 @Check(
   'CHK_max_discount_amount_positive',
-  '"max_discount_amount" IS NULL OR "max_discount_amount" > 0',
+  '"maxDiscountAmount" IS NULL OR "maxDiscountAmount" > 0',
 )
 @Check(
   'CHK_quantity_non_negative',
-  '"total_quantity" >= 0 AND "used_quantity" >= 0',
+  '"totalQuantity" >= 0 AND "usedQuantity" >= 0',
 )
-@Check('CHK_used_quantity_not_exceed', '"used_quantity" <= "total_quantity"')
+@Check('CHK_used_quantity_not_exceed', '"usedQuantity" <= "totalQuantity"')
 @Check(
   'CHK_validity_days_positive',
-  '"validity_days" IS NULL OR "validity_days" > 0',
+  '"validityDays" IS NULL OR "validityDays" > 0',
 )
 export class Coupon {
   @PrimaryGeneratedColumn('uuid')
@@ -36,8 +36,10 @@ export class Coupon {
   description: string;
 
   @Column({
-    type: 'varchar',
-    length: 20,
+    type: 'enum',
+    enum: DiscountType,
+    enumName: 'discount_type_enum',
+    
     comment: '할인 타입 (정률/정액)',
   })
   discountType: DiscountType;
@@ -69,8 +71,10 @@ export class Coupon {
   maxDiscountAmount: number;
 
   @Column({
-    type: 'varchar',
-    length: 20,
+    type: 'enum',
+    enum: ApplicableType,
+    enumName: 'applicable_type_enum',
+    
     comment: '적용 범위 (전체/카테고리/상품)',
   })
   applicableType: ApplicableType;
@@ -89,8 +93,10 @@ export class Coupon {
   usedQuantity: number;
 
   @Column({
-    type: 'varchar',
-    length: 20,
+    type: 'enum',
+    enum: ValidityType,
+    enumName: 'validity_type_enum',
+    
     comment: '유효기간 타입 (상대적/절대적)',
   })
   validityType: ValidityType;
@@ -98,10 +104,18 @@ export class Coupon {
   @Column({ nullable: true, comment: '상대적 유효기간 (일수)' })
   validityDays: number;
 
-  @Column({ type: 'datetime', nullable: true, comment: '절대적 유효기간 시작' })
+  @Column({ 
+    type: 'timestamptz', 
+    nullable: true, 
+    comment: '절대적 유효기간 시작' 
+  })
   validFrom: Date;
 
-  @Column({ type: 'datetime', nullable: true, comment: '절대적 유효기간 종료' })
+  @Column({ 
+    type: 'timestamptz', 
+    nullable: true, 
+    comment: '절대적 유효기간 종료' 
+  })
   validUntil: Date;
 
   @Column({ default: true, comment: '활성화 여부' })
@@ -110,10 +124,16 @@ export class Coupon {
   @Column({ type: 'uuid', comment: '생성자 ID' })
   createdBy: string;
 
-  @CreateDateColumn({ comment: '생성일시' })
+  @CreateDateColumn({ 
+    type: 'timestamptz',
+    comment: '생성일시' 
+  })
   createdAt: Date;
 
-  @UpdateDateColumn({ comment: '수정일시' })
+  @UpdateDateColumn({ 
+    type: 'timestamptz',
+    comment: '수정일시' 
+  })
   updatedAt: Date;
 
   // 관계 매핑

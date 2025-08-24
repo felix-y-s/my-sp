@@ -29,10 +29,14 @@ export class Item {
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ 
+    type: 'timestamptz' 
+  })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ 
+    type: 'timestamptz' 
+  })
   updatedAt: Date;
 
   // 관계 설정

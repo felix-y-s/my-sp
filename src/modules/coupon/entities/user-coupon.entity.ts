@@ -28,29 +28,47 @@ export class UserCoupon {
   couponId: string;
 
   @Column({
-    type: 'varchar',
-    length: 20,
+    type: 'enum',
+    enum: UserCouponStatus,
+    enumName: 'user_coupon_status_enum',
+    
     default: UserCouponStatus.ACTIVE,
     comment: '쿠폰 상태',
   })
   status: UserCouponStatus;
 
-  @CreateDateColumn({ comment: '쿠폰 발급일시' })
+  @CreateDateColumn({ 
+    type: 'timestamptz',
+    comment: '쿠폰 발급일시' 
+  })
   issuedAt: Date;
 
-  @Column({ type: 'datetime', comment: '쿠폰 만료일시' })
+  @Column({ 
+    type: 'timestamptz', 
+    comment: '쿠폰 만료일시' 
+  })
   expiresAt: Date;
 
-  @Column({ type: 'datetime', nullable: true, comment: '쿠폰 사용일시' })
+  @Column({ 
+    type: 'timestamptz', 
+    nullable: true, 
+    comment: '쿠폰 사용일시' 
+  })
   usedAt: Date | null;
 
   @Column({ type: 'uuid', nullable: true, comment: '사용된 주문 ID' })
   usedInOrderId: string | null;
 
-  @CreateDateColumn({ comment: '생성일시' })
+  @CreateDateColumn({ 
+    type: 'timestamptz',
+    comment: '생성일시' 
+  })
   createdAt: Date;
 
-  @UpdateDateColumn({ comment: '수정일시' })
+  @UpdateDateColumn({ 
+    type: 'timestamptz',
+    comment: '수정일시' 
+  })
   updatedAt: Date;
 
   // 관계 매핑

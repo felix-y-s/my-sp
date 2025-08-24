@@ -40,17 +40,25 @@ export class ItemReservation {
   originalStock: number;
 
   @Column({
-    type: 'varchar',
-    length: 20,
+    type: 'enum',
+    enum: ['RESERVED', 'CONFIRMED', 'CANCELLED', 'EXPIRED'],
+    enumName: 'reservation_status_enum',
+    
     default: 'RESERVED',
     comment: '예약 상태 (RESERVED, CONFIRMED, CANCELLED, EXPIRED)',
   })
   status: string;
 
-  @CreateDateColumn({ comment: '예약 생성 시간' })
+  @CreateDateColumn({ 
+    type: 'timestamptz',
+    comment: '예약 생성 시간' 
+  })
   reservedAt: Date;
 
-  @Column({ type: 'datetime', comment: '만료 시간 (TTL)' })
+  @Column({ 
+    type: 'timestamptz', 
+    comment: '만료 시간 (TTL)' 
+  })
   expiresAt: Date;
 
   @Column({ nullable: true, comment: '취소/만료 사유' })

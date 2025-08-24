@@ -51,8 +51,9 @@ export class Order {
   userCouponId: string | null;
 
   @Column({
-    type: 'varchar',
+    type: 'enum',
     enum: OrderStatus,
+    enumName: 'order_status_enum', // PostgreSQL enum type name
     default: OrderStatus.PENDING,
   })
   status: OrderStatus;
@@ -60,10 +61,14 @@ export class Order {
   @Column({ type: 'varchar', nullable: true })
   failureReason: string;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ 
+    type: 'timestamptz' 
+  })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ 
+    type: 'timestamptz' 
+  })
   updatedAt: Date;
 
   // 관계 설정

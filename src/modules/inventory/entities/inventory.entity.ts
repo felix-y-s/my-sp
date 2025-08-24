@@ -20,10 +20,14 @@ export class Inventory {
   @Column({ type: 'integer', default: 1 })
   quantity: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ 
+    type: 'timestamptz'
+  })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ 
+    type: 'timestamptz'
+  })
   updatedAt: Date;
 
   // 관계 설정
