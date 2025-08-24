@@ -6,6 +6,7 @@ import configuration from './config/configuration';
 
 // Infrastructure
 import { DatabaseModule } from './infrastructure/database/database.module';
+import { MongoDbModule } from './infrastructure/database/mongodb.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 
 // Common Modules
@@ -47,6 +48,7 @@ import { CouponModule } from './modules/coupon/coupon.module';
 
     // Infrastructure 모듈
     DatabaseModule,
+    MongoDbModule,
     RedisModule,
 
     // Common 모듈

@@ -27,6 +27,25 @@ export default () => ({
     poolSize: parseInt(process.env.DATABASE_POOL_SIZE || '', 10) || 10,
   },
 
+  // MongoDB 설정
+  mongodb: {
+    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/purchase_saga_mongo',
+    host: process.env.MONGODB_HOST || 'localhost',
+    port: parseInt(process.env.MONGODB_PORT || '', 10) || 27017,
+    database: process.env.MONGODB_DATABASE || 'purchase_saga_mongo',
+    username: process.env.MONGODB_USERNAME,
+    password: process.env.MONGODB_PASSWORD,
+    authSource: process.env.MONGODB_AUTH_SOURCE || 'admin',
+    ssl: process.env.MONGODB_SSL === 'true',
+    replicaSet: process.env.MONGODB_REPLICA_SET,
+    maxPoolSize: parseInt(process.env.MONGODB_MAX_POOL_SIZE || '', 10) || 10,
+    minPoolSize: parseInt(process.env.MONGODB_MIN_POOL_SIZE || '', 10) || 1,
+    maxIdleTimeMS: parseInt(process.env.MONGODB_MAX_IDLE_TIME_MS || '', 10) || 30000,
+    serverSelectionTimeoutMS: parseInt(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || '', 10) || 5000,
+    socketTimeoutMS: parseInt(process.env.MONGODB_SOCKET_TIMEOUT_MS || '', 10) || 45000,
+    connectTimeoutMS: parseInt(process.env.MONGODB_CONNECT_TIMEOUT_MS || '', 10) || 10000,
+  },
+
   // 로그 설정
   logging: {
     level: process.env.LOG_LEVEL || 'debug',
