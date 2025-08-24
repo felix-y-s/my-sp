@@ -1,4 +1,4 @@
-import { IsUUID, IsNumber, IsPositive, Min } from 'class-validator';
+import { IsUUID, IsNumber, IsPositive, Min, IsOptional } from 'class-validator';
 
 export class CreateOrderDto {
   @IsUUID()
@@ -11,4 +11,8 @@ export class CreateOrderDto {
   @IsPositive()
   @Min(1)
   quantity: number;
+
+  @IsOptional()
+  @IsUUID()
+  userCouponId?: string;
 }

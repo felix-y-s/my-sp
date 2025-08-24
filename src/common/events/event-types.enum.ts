@@ -35,4 +35,9 @@ export enum EventType {
 
   // 알림 관련 이벤트
   NOTIFICATION_SENT = 'notification.sent',
+
+  // 쿠폰 관련 이벤트 (Saga 플로우 통합)
+  COUPON_VALIDATION_REQUESTED = 'coupon.validation.requested',
+  COUPON_VALIDATED = 'coupon.validated',
+  COUPON_VALIDATION_FAILED = 'coupon.validation.failed',
 }

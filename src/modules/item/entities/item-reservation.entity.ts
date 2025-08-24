@@ -13,7 +13,8 @@ export const ReservationStatus = {
   EXPIRED: 'EXPIRED',
 } as const;
 
-export type ReservationStatusType = typeof ReservationStatus[keyof typeof ReservationStatus];
+export type ReservationStatusType =
+  (typeof ReservationStatus)[keyof typeof ReservationStatus];
 
 @Entity('item_reservations')
 @Index(['orderId'])

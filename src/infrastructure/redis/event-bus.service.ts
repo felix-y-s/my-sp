@@ -42,9 +42,9 @@ export class EventBusService {
         try {
           const eventData = JSON.parse(message);
           this.logger.log(`이벤트 수신: ${channel}`, eventData.data);
-          
+
           // 해당 채널의 모든 핸들러 실행
-          handlers.forEach(handler => {
+          handlers.forEach((handler) => {
             try {
               handler(eventData.data);
             } catch (handlerError) {
@@ -95,11 +95,13 @@ export class EventBusService {
       if (!this.eventHandlers.has(eventType)) {
         this.eventHandlers.set(eventType, []);
       }
-      
+
       const handlers = this.eventHandlers.get(eventType)!;
       handlers.push(handler);
 
-      this.logger.log(`이벤트 구독 시작: ${eventType} (핸들러 수: ${handlers.length})`);
+      this.logger.log(
+        `이벤트 구독 시작: ${eventType} (핸들러 수: ${handlers.length})`,
+      );
     } catch (error) {
       this.logger.error(`이벤트 구독 실패: ${eventType}`, error);
       throw error;
@@ -125,7 +127,9 @@ export class EventBusService {
         const index = handlers.indexOf(handler);
         if (index > -1) {
           handlers.splice(index, 1);
-          this.logger.log(`특정 핸들러 구독 해제: ${eventType} (남은 핸들러: ${handlers.length})`);
+          this.logger.log(
+            `특정 핸들러 구독 해제: ${eventType} (남은 핸들러: ${handlers.length})`,
+          );
         }
       } else {
         // 모든 핸들러 제거

@@ -54,9 +54,13 @@ export class AuditService {
 
       // 추가적으로 로그파일에도 기록 (중요한 이벤트의 경우)
       if (auditData.severity && auditData.severity >= 4) {
-        this.logger.warn(`[HIGH PRIORITY] 감사 로그: ${JSON.stringify(auditData)}`);
+        this.logger.warn(
+          `[HIGH PRIORITY] 감사 로그: ${JSON.stringify(auditData)}`,
+        );
       } else {
-        this.logger.log(`감사 로그: ${auditData.action} | ${auditData.resource}:${auditData.resourceId} | 사용자: ${auditData.userId || 'unknown'}`);
+        this.logger.log(
+          `감사 로그: ${auditData.action} | ${auditData.resource}:${auditData.resourceId} | 사용자: ${auditData.userId || 'unknown'}`,
+        );
       }
 
       return savedLog;
@@ -166,10 +170,7 @@ export class AuditService {
   /**
    * 특정 사용자의 감사 로그 조회
    */
-  async getLogsByUser(
-    userId: string, 
-    limit: number = 50
-  ): Promise<AuditLog[]> {
+  async getLogsByUser(userId: string, limit: number = 50): Promise<AuditLog[]> {
     return this.auditLogRepository.find({
       where: { userId },
       order: { timestamp: 'DESC' },
@@ -181,9 +182,9 @@ export class AuditService {
    * 특정 리소스의 감사 로그 조회
    */
   async getLogsByResource(
-    resource: string, 
-    resourceId: string, 
-    limit: number = 50
+    resource: string,
+    resourceId: string,
+    limit: number = 50,
   ): Promise<AuditLog[]> {
     return this.auditLogRepository.find({
       where: { resource, resourceId },
@@ -197,7 +198,7 @@ export class AuditService {
    */
   async getHighSeverityLogs(
     minSeverity: number = 4,
-    limit: number = 100
+    limit: number = 100,
   ): Promise<AuditLog[]> {
     return this.auditLogRepository
       .createQueryBuilder('audit')
@@ -213,13 +214,10 @@ export class AuditService {
   async getSecurityLogs(limit: number = 100): Promise<AuditLog[]> {
     return this.auditLogRepository
       .createQueryBuilder('audit')
-      .where(
-        'audit.action IN (:...actions) OR audit.status = :status',
-        {
-          actions: ['UNAUTHORIZED_ACCESS', 'LOGIN_FAILED'],
-          status: 'blocked'
-        }
-      )
+      .where('audit.action IN (:...actions) OR audit.status = :status', {
+        actions: ['UNAUTHORIZED_ACCESS', 'LOGIN_FAILED'],
+        status: 'blocked',
+      })
       .orderBy('audit.timestamp', 'DESC')
       .limit(limit)
       .getMany();
@@ -230,7 +228,7 @@ export class AuditService {
    */
   async getActionStatistics(
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
   ): Promise<{ action: string; count: string }[]> {
     let query = this.auditLogRepository
       .createQueryBuilder('audit')

@@ -31,6 +31,26 @@ export class Order {
   totalAmount: number;
 
   @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+    comment: '할인 금액',
+  })
+  discountAmount: number;
+
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    comment: '최종 결제 금액',
+  })
+  finalAmount: number;
+
+  @Column({ type: 'uuid', nullable: true, comment: '사용된 사용자 쿠폰 ID' })
+  userCouponId: string | null;
+
+  @Column({
     type: 'varchar',
     enum: OrderStatus,
     default: OrderStatus.PENDING,

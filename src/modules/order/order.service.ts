@@ -11,6 +11,9 @@ import {
   OrderCreatedEvent,
   OrderCompletedEvent,
   OrderFailedEvent,
+  CouponValidationRequestedEvent,
+  CouponValidatedEvent,
+  CouponValidationFailedEvent,
 } from '../../common/events/event-interfaces';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -40,6 +43,16 @@ export class OrderService {
       this.handlePaymentProcessed.bind(this),
     );
 
+    // 쿠폰 검증 결과 처리
+    await this.eventBus.subscribe(
+      EventType.COUPON_VALIDATED,
+      this.handleCouponValidated.bind(this),
+    );
+    await this.eventBus.subscribe(
+      EventType.COUPON_VALIDATION_FAILED,
+      this.handleCouponValidationFailed.bind(this),
+    );
+
     // 각 단계별 실패 이벤트 처리
     await this.eventBus.subscribe(
       EventType.USER_VALIDATION_FAILED,
@@ -60,10 +73,10 @@ export class OrderService {
   }
 
   /**
-   * 주문 생성 - Saga 시작점
+   * 주문 생성 - 이벤트 드리븐 Saga 시작점
    */
   async createOrder(createOrderDto: CreateOrderDto): Promise<Order> {
-    const { userId, itemId, quantity } = createOrderDto;
+    const { userId, itemId, quantity, userCouponId } = createOrderDto;
 
     // 사용자 및 아이템 기본 검증
     const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -76,32 +89,58 @@ export class OrderService {
       throw new NotFoundException('아이템을 찾을 수 없습니다');
     }
 
-    // 총 금액 계산
+    // 기본 총 금액 계산
     const totalAmount = item.calculateTotalPrice(quantity);
 
-    // 주문 생성
+    // 임시 주문 생성 (쿠폰 검증 전)
     const order = this.orderRepository.create({
       id: uuidv4(),
       userId,
       itemId,
       quantity,
       totalAmount,
+      discountAmount: 0,
+      finalAmount: totalAmount,
+      userCouponId: null,
       status: OrderStatus.PENDING,
     });
 
     const savedOrder = await this.orderRepository.save(order);
 
-    // Saga 시작 - OrderCreated 이벤트 발행
-    const orderCreatedEvent: OrderCreatedEvent = {
-      orderId: savedOrder.id,
-      userId,
-      itemId,
-      quantity,
-      totalAmount,
-    };
+    if (userCouponId) {
+      // 쿠폰이 있는 경우: 쿠폰 검증 요청 이벤트 발행
+      const couponValidationEvent: CouponValidationRequestedEvent = {
+        orderId: savedOrder.id,
+        userId,
+        itemId,
+        quantity,
+        totalAmount,
+        userCouponId,
+      };
 
-    await this.eventBus.publish(EventType.ORDER_CREATED, orderCreatedEvent);
-    this.logger.log(`주문 생성 및 Saga 시작: ${savedOrder.id}`);
+      await this.eventBus.publish(
+        EventType.COUPON_VALIDATION_REQUESTED,
+        couponValidationEvent,
+      );
+      this.logger.log(
+        `쿠폰 검증 요청: ${userCouponId}, 주문: ${savedOrder.id}`,
+      );
+    } else {
+      // 쿠폰이 없는 경우: 바로 ORDER_CREATED 이벤트 발행
+      const orderCreatedEvent: OrderCreatedEvent = {
+        orderId: savedOrder.id,
+        userId,
+        itemId,
+        quantity,
+        totalAmount,
+        discountAmount: 0,
+        finalAmount: totalAmount,
+        userCouponId: null,
+      };
+
+      await this.eventBus.publish(EventType.ORDER_CREATED, orderCreatedEvent);
+      this.logger.log(`주문 생성 및 Saga 시작: ${savedOrder.id} (쿠폰 없음)`);
+    }
 
     return savedOrder;
   }
@@ -146,7 +185,7 @@ export class OrderService {
   }
 
   /**
-   * 주문 실패 처리
+   * 주문 실패 처리 (쿠폰 사용 취소 포함)
    */
   private async handleOrderFailed(eventData: any): Promise<void> {
     const { orderId, reason } = eventData;
@@ -160,16 +199,21 @@ export class OrderService {
         return;
       }
 
+      // 쿠폰 사용 취소 처리 (이벤트 방식으로 처리)
+      // 주문 실패 이벤트에 쿠폰 정보 포함하여 쿠폰 서비스가 자동으로 취소 처리하도록 함
+
       // 주문 실패 처리
       order.markAsFailed(reason);
       await this.orderRepository.save(order);
 
-      // 주문 실패 이벤트 발행
+      // 주문 실패 이벤트 발행 (쿠폰 정보 포함)
       const orderFailedEvent: OrderFailedEvent = {
         orderId,
         userId: order.userId,
         reason,
         failedStep: this.getFailedStepFromReason(reason),
+        userCouponId: order.userCouponId,
+        discountAmount: order.discountAmount,
       };
 
       await this.eventBus.publish(EventType.ORDER_FAILED, orderFailedEvent);
@@ -188,7 +232,109 @@ export class OrderService {
     if (reason.includes('인벤토리')) return 'INVENTORY_RESERVATION';
     if (reason.includes('아이템')) return 'ITEM_RESERVATION';
     if (reason.includes('결제')) return 'PAYMENT_PROCESSING';
+    if (reason.includes('쿠폰')) return 'COUPON_VALIDATION';
     return 'UNKNOWN';
+  }
+
+  /**
+   * 쿠폰 검증 성공 처리
+   */
+  private async handleCouponValidated(
+    eventData: CouponValidatedEvent,
+  ): Promise<void> {
+    const { orderId, discountAmount, finalAmount, userCouponId, couponInfo } =
+      eventData;
+
+    try {
+      const order = await this.orderRepository.findOne({
+        where: { id: orderId },
+        relations: ['item'],
+      });
+
+      if (!order) {
+        this.logger.error(`주문을 찾을 수 없습니다: ${orderId}`);
+        return;
+      }
+
+      // 주문에 쿠폰 적용 결과 반영
+      order.userCouponId = userCouponId;
+      order.discountAmount = discountAmount;
+      order.finalAmount = finalAmount;
+      await this.orderRepository.save(order);
+
+      // ORDER_CREATED 이벤트 발행 (쿠폰 적용 완료)
+      const orderCreatedEvent: OrderCreatedEvent = {
+        orderId,
+        userId: order.userId,
+        itemId: order.itemId,
+        quantity: order.quantity,
+        totalAmount: order.totalAmount,
+        discountAmount,
+        finalAmount,
+        userCouponId,
+      };
+
+      await this.eventBus.publish(EventType.ORDER_CREATED, orderCreatedEvent);
+      this.logger.log(
+        `주문 생성 및 Saga 시작: ${orderId} (쿠폰 적용: ${couponInfo.name})`,
+      );
+    } catch (error) {
+      this.logger.error(`쿠폰 검증 성공 처리 실패: ${orderId}`, error);
+
+      // 쿠폰 검증은 성공했지만 주문 처리 실패 시 실패 이벤트 발행
+      const failedEvent: CouponValidationFailedEvent = {
+        orderId,
+        userId: eventData.userId,
+        userCouponId,
+        errors: ['주문 처리 중 오류 발생'],
+        reason: '주문 업데이트 실패',
+      };
+      await this.eventBus.publish(
+        EventType.COUPON_VALIDATION_FAILED,
+        failedEvent,
+      );
+    }
+  }
+
+  /**
+   * 쿠폰 검증 실패 처리
+   */
+  private async handleCouponValidationFailed(
+    eventData: CouponValidationFailedEvent,
+  ): Promise<void> {
+    const { orderId, errors, reason } = eventData;
+
+    try {
+      const order = await this.orderRepository.findOne({
+        where: { id: orderId },
+      });
+
+      if (!order) {
+        this.logger.error(`주문을 찾을 수 없습니다: ${orderId}`);
+        return;
+      }
+
+      // 주문 실패 처리
+      order.markAsFailed(`쿠폰 검증 실패: ${reason}`);
+      await this.orderRepository.save(order);
+
+      // 주문 실패 이벤트 발행
+      const orderFailedEvent: OrderFailedEvent = {
+        orderId,
+        userId: order.userId,
+        reason: `쿠폰 검증 실패: ${errors.join(', ')}`,
+        failedStep: 'COUPON_VALIDATION',
+        userCouponId: eventData.userCouponId,
+        discountAmount: 0,
+      };
+
+      await this.eventBus.publish(EventType.ORDER_FAILED, orderFailedEvent);
+      this.logger.warn(
+        `쿠폰 검증 실패로 인한 주문 실패: ${orderId} - ${reason}`,
+      );
+    } catch (error) {
+      this.logger.error(`쿠폰 검증 실패 처리 오류: ${orderId}`, error);
+    }
   }
 
   /**

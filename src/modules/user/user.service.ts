@@ -72,7 +72,7 @@ export class UserService {
         where: { id: userId },
         lock: { mode: 'pessimistic_write' }, // SELECT ... FOR UPDATE
       });
-      
+
       if (!user) {
         await queryRunner.rollbackTransaction();
         await this.publishValidationFailed(
@@ -146,10 +146,7 @@ export class UserService {
         requiredAmount: totalAmount,
       };
 
-      await this.eventBus.publish(
-        EventType.USER_VALIDATED,
-        userValidatedEvent,
-      );
+      await this.eventBus.publish(EventType.USER_VALIDATED, userValidatedEvent);
 
       // 6. 결제 예약 완료 이벤트 발행
       const paymentReservedEvent: PaymentReservedEvent = {
@@ -163,7 +160,7 @@ export class UserService {
         EventType.PAYMENT_RESERVED,
         paymentReservedEvent,
       );
-      
+
       this.logger.log(
         `사용자 검증 및 잔고 예약 완료: ${userId} | 주문: ${orderId} | 예약금액: ${totalAmount}`,
       );
@@ -235,7 +232,7 @@ export class UserService {
           where: { id: userId },
           lock: { mode: 'pessimistic_write' }, // SELECT ... FOR UPDATE
         });
-        
+
         if (user) {
           user.balance = reservation.originalBalance;
           await queryRunner.manager.save(user);
@@ -258,7 +255,7 @@ export class UserService {
             EventType.PAYMENT_ROLLBACK,
             paymentRollbackEvent,
           );
-          
+
           this.logger.log(
             `잔고 롤백 완료: ${userId} | 주문: ${orderId} | 복원금액: ${reservation.amount} | 사유: ${reason}`,
           );

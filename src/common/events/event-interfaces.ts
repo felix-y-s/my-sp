@@ -13,16 +13,24 @@ export interface OrderCreatedEvent extends BaseEventData {
   itemId: string;
   quantity: number;
   totalAmount: number;
+  discountAmount?: number;
+  finalAmount?: number;
+  userCouponId?: string | null;
 }
 
 export interface OrderCompletedEvent extends BaseEventData {
   itemName: string;
   totalAmount: number;
+  discountAmount?: number;
+  finalAmount?: number;
+  userCouponId?: string | null;
 }
 
 export interface OrderFailedEvent extends BaseEventData {
   reason: string;
   failedStep: string;
+  userCouponId?: string | null;
+  discountAmount?: number;
 }
 
 // 사용자/결제 관련 이벤트 데이터
@@ -86,6 +94,33 @@ export interface NotificationEvent extends BaseEventData {
   type: 'success' | 'error' | 'warning';
 }
 
+// 쿠폰 관련 이벤트 데이터
+export interface CouponValidationRequestedEvent extends BaseEventData {
+  itemId: string;
+  quantity: number;
+  totalAmount: number;
+  userCouponId: string;
+}
+
+export interface CouponValidatedEvent extends BaseEventData {
+  userCouponId: string;
+  discountAmount: number;
+  finalAmount: number;
+  originalAmount: number;
+  couponInfo: {
+    id: string;
+    name: string;
+    discountType: string;
+    discountValue: number;
+  };
+}
+
+export interface CouponValidationFailedEvent extends BaseEventData {
+  userCouponId: string;
+  errors: string[];
+  reason: string;
+}
+
 /**
  * 이벤트 페이로드 타입 맵핑
  */
@@ -102,4 +137,7 @@ export type EventPayload =
   | ItemRestoredEvent
   | PaymentProcessedEvent
   | PaymentFailedEvent
-  | NotificationEvent;
+  | NotificationEvent
+  | CouponValidationRequestedEvent
+  | CouponValidatedEvent
+  | CouponValidationFailedEvent;

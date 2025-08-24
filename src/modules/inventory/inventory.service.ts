@@ -75,7 +75,7 @@ export class InventoryService {
         where: { id: userId },
         lock: { mode: 'pessimistic_write' }, // SELECT ... FOR UPDATE
       });
-      
+
       if (!user) {
         await queryRunner.rollbackTransaction();
         await this.publishReservationFailed(
@@ -133,7 +133,7 @@ export class InventoryService {
         EventType.INVENTORY_RESERVED,
         inventoryReservedEvent,
       );
-      
+
       this.logger.log(
         `인벤토리 공간 예약 완료: ${userId} | 주문: ${orderId} | 아이템: ${itemId}`,
       );
@@ -284,7 +284,7 @@ export class InventoryService {
         EventType.INVENTORY_ROLLBACK,
         inventoryRollbackEvent,
       );
-      
+
       this.logger.log(
         `인벤토리 예약 롤백 완료: ${userId} | 주문: ${orderId} | 사유: ${reason}`,
       );
@@ -382,7 +382,10 @@ export class InventoryService {
       return success;
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(`아이템 사용 실패: ${userId} | 아이템: ${itemId}`, error);
+      this.logger.error(
+        `아이템 사용 실패: ${userId} | 아이템: ${itemId}`,
+        error,
+      );
       return false;
     } finally {
       await queryRunner.release();

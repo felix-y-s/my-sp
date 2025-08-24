@@ -18,6 +18,7 @@ import { ItemModule } from './modules/item/item.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { NotificationModule } from './modules/notification/notification.module';
+import { CouponModule } from './modules/coupon/coupon.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { NotificationModule } from './modules/notification/notification.module';
     InventoryModule,
     PaymentModule,
     NotificationModule,
+    CouponModule,
   ],
   controllers: [AppController],
   providers: [AppService],

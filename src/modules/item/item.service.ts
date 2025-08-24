@@ -64,78 +64,78 @@ export class ItemService {
     try {
       // DB 트랜잭션으로 동시성 제어 (ACID 보장)
       // 1. 아이템 조회 및 검증
-        const item = await this.itemRepository.findOne({
-          where: { id: itemId },
-        });
-        if (!item) {
-          await this.publishReservationFailed(
-            orderId,
-            userId,
-            itemId,
-            '아이템을 찾을 수 없습니다',
-          );
-          return;
-        }
+      const item = await this.itemRepository.findOne({
+        where: { id: itemId },
+      });
+      if (!item) {
+        await this.publishReservationFailed(
+          orderId,
+          userId,
+          itemId,
+          '아이템을 찾을 수 없습니다',
+        );
+        return;
+      }
 
-        if (!item.isAvailableForSale()) {
-          await this.publishReservationFailed(
-            orderId,
-            userId,
-            itemId,
-            '판매 중단된 아이템입니다',
-          );
-          return;
-        }
+      if (!item.isAvailableForSale()) {
+        await this.publishReservationFailed(
+          orderId,
+          userId,
+          itemId,
+          '판매 중단된 아이템입니다',
+        );
+        return;
+      }
 
-        if (!item.hasStock(quantity)) {
-          await this.publishReservationFailed(
-            orderId,
-            userId,
-            itemId,
-            `재고가 부족합니다. (필요: ${quantity}, 재고: ${item.stock})`,
-          );
-          return;
-        }
+      if (!item.hasStock(quantity)) {
+        await this.publishReservationFailed(
+          orderId,
+          userId,
+          itemId,
+          `재고가 부족합니다. (필요: ${quantity}, 재고: ${item.stock})`,
+        );
+        return;
+      }
 
-        // 2. DB 트랜잭션으로 예약 정보 생성 + 재고 차감
-        await this.dataSource.transaction(async (manager) => {
-          // 재고 차감
-          await manager.decrement(Item, { id: itemId }, 'stock', quantity);
+      // 2. DB 트랜잭션으로 예약 정보 생성 + 재고 차감
+      await this.dataSource.transaction(async (manager) => {
+        // 재고 차감
+        await manager.decrement(Item, { id: itemId }, 'stock', quantity);
 
-          // 예약 정보 생성
-          const reservation = manager.create(ItemReservation, {
-            orderId,
-            userId,
-            itemId,
-            reservedQuantity: quantity,
-            originalStock: item.stock,
-            expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5분 TTL
-          });
-
-          await manager.save(reservation);
-        });
-
-        // 3. 업데이트된 재고 정보 다시 조회
-        const updatedItem = await this.itemRepository.findOne({
-          where: { id: itemId },
-        });
-        const remainingStock = updatedItem
-          ? updatedItem.stock
-          : item.stock - quantity;
-
-        // 4. 아이템 예약 완료 이벤트 발행
-        const itemReservedEvent: ItemReservedEvent = {
+        // 예약 정보 생성
+        const reservation = manager.create(ItemReservation, {
           orderId,
           userId,
           itemId,
           reservedQuantity: quantity,
-          remainingStock: remainingStock,
-        };
+          originalStock: item.stock,
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5분 TTL
+        });
 
-        await this.eventBus.publish(EventType.ITEM_RESERVED, itemReservedEvent);
-        this.logger.log(
-          `아이템 재고 예약 완료: ${itemId} | 주문: ${orderId} | 예약수량: ${quantity} | 남은재고: ${remainingStock}`,
-        );
+        await manager.save(reservation);
+      });
+
+      // 3. 업데이트된 재고 정보 다시 조회
+      const updatedItem = await this.itemRepository.findOne({
+        where: { id: itemId },
+      });
+      const remainingStock = updatedItem
+        ? updatedItem.stock
+        : item.stock - quantity;
+
+      // 4. 아이템 예약 완료 이벤트 발행
+      const itemReservedEvent: ItemReservedEvent = {
+        orderId,
+        userId,
+        itemId,
+        reservedQuantity: quantity,
+        remainingStock: remainingStock,
+      };
+
+      await this.eventBus.publish(EventType.ITEM_RESERVED, itemReservedEvent);
+      this.logger.log(
+        `아이템 재고 예약 완료: ${itemId} | 주문: ${orderId} | 예약수량: ${quantity} | 남은재고: ${remainingStock}`,
+      );
     } catch (error) {
       this.logger.error(
         `아이템 재고 예약 실패: ${itemId} | 주문: ${orderId}`,
@@ -358,7 +358,11 @@ export class ItemService {
       userRoles.includes('admin') || userRoles.includes('inventory_manager');
     if (!hasPermission) {
       // 권한 없는 접근 시도 감사 로그 기록
-      await this.auditService.logUnauthorizedAccess(adminUserId, 'UPDATE_STOCK', 'Item');
+      await this.auditService.logUnauthorizedAccess(
+        adminUserId,
+        'UPDATE_STOCK',
+        'Item',
+      );
       throw new Error('재고 관리 권한이 없습니다');
     }
 
@@ -382,12 +386,11 @@ export class ItemService {
       newStock,
       changedBy: adminUserId,
       reason,
-      timestamp: new Date()
+      timestamp: new Date(),
     });
 
     this.logger.log(
       `관리자 재고 업데이트: ${itemId} | ${oldStock} -> ${newStock} | 관리자: ${adminUserId} | 사유: ${reason}`,
     );
   }
-
 }
