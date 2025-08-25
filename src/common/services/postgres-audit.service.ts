@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { AuditLog } from '../entities/audit-log.entity';
-
+import { IAuditService } from '../interfaces/audit.interface';
 export interface AuditLogData {
   action: string;
   resource: string;
@@ -26,9 +26,13 @@ export interface StockChangeAuditData {
   timestamp: Date;
 }
 
+/**
+ * PostgreSQL 전용 AuditService 구현체
+ * 기존 AuditService와 동일한 구현이지만 IAuditService 인터페이스를 명시적으로 구현
+ */
 @Injectable()
-export class AuditService {
-  private readonly logger = new Logger(AuditService.name);
+export class PostgresAuditService implements IAuditService {
+  private readonly logger = new Logger(PostgresAuditService.name);
 
   constructor(
     @InjectRepository(AuditLog)
@@ -243,6 +247,12 @@ export class AuditService {
       query = query.andWhere('audit.timestamp <= :endDate', { endDate });
     }
 
-    return query.getRawMany();
+    const results = await query.getRawMany();
+    
+    // MongoDB 호환성을 위해 count를 문자열로 변환
+    return results.map(result => ({
+      action: result.action,
+      count: result.count.toString()
+    }));
   }
 }

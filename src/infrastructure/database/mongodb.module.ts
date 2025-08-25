@@ -38,7 +38,7 @@ import { MongooseModule } from '@nestjs/mongoose';
         uri += `${mongoConfig.host}:${mongoConfig.port}/${mongoConfig.database}`;
         
         // 추가 옵션들
-        const options = [];
+        const options: string[] = [];
         if (mongoConfig.authSource) {
           options.push(`authSource=${mongoConfig.authSource}`);
         }

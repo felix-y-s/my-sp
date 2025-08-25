@@ -13,7 +13,8 @@ import {
   ItemReservedEvent,
   ItemRestoredEvent,
 } from '../../common/events/event-interfaces';
-import { AuditService } from '../../common/services/audit.service';
+import { Inject } from '@nestjs/common';
+import type { IAuditService } from '../../common/interfaces/audit.interface';
 
 @Injectable()
 export class ItemService {
@@ -26,7 +27,8 @@ export class ItemService {
     private dataSource: DataSource,
     private reservationService: ItemReservationService,
     private eventBus: EventBusService,
-    private auditService: AuditService,
+    @Inject('AuditService')
+    private auditService: IAuditService,
   ) {
     this.initializeEventHandlers();
   }

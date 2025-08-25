@@ -129,6 +129,11 @@ export default () => ({
     retentionDays: parseInt(process.env.BACKUP_RETENTION_DAYS || '', 10) || 30,
   },
 
+  // 감사 로그 설정
+  audit: {
+    storageType: process.env.AUDIT_STORAGE_TYPE || 'postgresql', // postgresql | mongodb
+  },
+
   // 테스트 설정 (개발용)
   test: {
     userBalance: parseInt(process.env.TEST_USER_BALANCE || '', 10) || 50000,
