@@ -17,7 +17,7 @@ async function testDualAuditCompatibility() {
   console.log(`\\n📋 현재 설정된 저장소 타입: ${currentStorageType}`);
 
   const app = await NestFactory.createApplicationContext(AppModule);
-  const auditService = app.get<IAuditService>('AuditService');
+  const auditService = app.get<IAuditService>(IAuditService);
 
   try {
     // 테스트 데이터 준비

@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { AuditLog } from '../entities/audit-log.entity';
-import { IAuditService, ExtendedAuditLogData } from '../interfaces/audit.interface';
+import { IAuditService, ExtendedAuditLogData } from '../../../common/interfaces/audit.interface';
 export interface AuditLogData {
   action: string;
   resource: string;

@@ -1,54 +1,16 @@
 import { Global, Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { MongooseModule } from '@nestjs/mongoose';
-import { MongoAuditService } from '../services/mongo-audit.service';
-import { PostgresAuditService } from '../services/postgres-audit.service';
-import { AuditLog } from '../entities/audit-log.entity';
-import { AuditLogMongo, AuditLogMongoSchema } from '../schemas/audit-log-mongo.schema';
-import { IAuditService } from '../interfaces/audit.interface';
+import { AuditModule as InfrastructureAuditModule } from '../../infrastructure/audit/audit.module';
 
+/**
+ * 감사 시스템 모듈 (레거시 호환성 래퍼)
+ * 
+ * @deprecated Phase 2에서 infrastructure/audit/audit.module.ts로 이동됨
+ * 이 모듈은 하위 호환성을 위해서만 존재하며, 곧 제거될 예정입니다.
+ * 새로운 코드에서는 직접 InfrastructureAuditModule을 import하세요.
+ */
 @Global()
 @Module({
-  imports: [
-    ConfigModule,
-    // PostgreSQL AuditLog을 위한 TypeORM 모듈
-    TypeOrmModule.forFeature([AuditLog]),
-    // MongoDB AuditLog을 위한 Mongoose 모듈
-    MongooseModule.forFeature([
-      { name: AuditLogMongo.name, schema: AuditLogMongoSchema }
-    ]),
-  ],
-  providers: [
-    // MongoDB 기반 MongoAuditService
-    MongoAuditService,
-    // PostgreSQL 기반 PostgresAuditService
-    PostgresAuditService,
-    // 조건부 서비스 제공자 (환경 설정에 따라 MongoDB 또는 PostgreSQL 서비스 제공)
-    {
-      provide: 'AuditService', // 문자열 토큰 사용
-      useFactory: (
-        configService: ConfigService,
-        mongoAuditService: MongoAuditService,
-        postgresAuditService: PostgresAuditService,
-      ): IAuditService => {
-        const storageType = configService.get<string>('audit.storageType');
-        
-        if (storageType === 'mongodb') {
-          console.log('🍃 MongoDB AuditService 활성화');
-          return mongoAuditService;
-        } else {
-          console.log('🐘 PostgreSQL AuditService 활성화');
-          return postgresAuditService;
-        }
-      },
-      inject: [ConfigService, MongoAuditService, PostgresAuditService],
-    },
-  ],
-  exports: [
-    'AuditService', // 기존 코드 호환성 (조건부로 MongoDB 또는 PostgreSQL 서비스 제공)
-    MongoAuditService, // MongoDB 직접 사용이 필요한 경우
-    PostgresAuditService, // PostgreSQL 직접 사용이 필요한 경우
-  ],
+  imports: [InfrastructureAuditModule],
+  exports: [InfrastructureAuditModule],
 })
 export class AuditModule {}

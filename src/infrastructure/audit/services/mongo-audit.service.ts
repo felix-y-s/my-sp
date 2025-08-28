@@ -2,9 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AuditLogMongo, AuditLogMongoDocument } from '../schemas/audit-log-mongo.schema';
-import { IAuditService, ExtendedAuditLogData } from '../interfaces/audit.interface';
+import { IAuditService, ExtendedAuditLogData } from '../../../common/interfaces/audit.interface';
 import { AuditLogData, StockChangeAuditData } from './postgres-audit.service';
 
+/**
+ * MongoDB 전용 AuditService 구현체
+ * NoSQL 기반의 유연한 스키마와 집계 기능을 활용한 감사 로그 시스템
+ */
 @Injectable()
 export class MongoAuditService extends IAuditService {
   private readonly logger = new Logger(MongoAuditService.name);
