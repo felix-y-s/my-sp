@@ -9,8 +9,8 @@ import { DatabaseModule } from './infrastructure/database/database.module';
 import { MongoDbModule } from './infrastructure/database/mongodb.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 
-// Common Modules
-import { AuditModule } from './common/modules/audit.module';
+// Infrastructure 감사 모듈 (Phase 2에서 이전됨)
+import { AuditModule } from './infrastructure/audit/audit.module';
 
 // Business Modules
 import { OrderModule } from './modules/order/order.module';
@@ -50,9 +50,7 @@ import { CouponModule } from './modules/coupon/coupon.module';
     DatabaseModule,
     MongoDbModule,
     RedisModule,
-
-    // Common 모듈
-    AuditModule,
+    AuditModule, // Phase 2에서 이전된 감사 인프라스트럭처
 
     // Business 모듈 (Saga Choreography 참여자들)
     OrderModule,

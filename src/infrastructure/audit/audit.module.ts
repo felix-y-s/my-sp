@@ -2,6 +2,7 @@ import { Module, Global } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 
 // 엔티티 및 스키마
 import { AuditLog } from './entities/audit-log.entity';
@@ -11,7 +12,11 @@ import { AuditLogMongo, AuditLogMongoSchema } from './schemas/audit-log-mongo.sc
 import { IAuditService } from '../../common/interfaces/audit.interface';
 import { PostgresAuditService } from './services/postgres-audit.service';
 import { MongoAuditService } from './services/mongo-audit.service';
+import { AuditBatchProcessorService } from './services/audit-batch-processor.service';
+import { AuditCleanupService } from './services/audit-cleanup.service';
 
+// 컨트롤러
+import { AuditMonitoringController } from './controllers/audit-monitoring.controller';
 
 // 팩토리
 import { AuditServiceFactory } from './factories/audit-service.factory';
@@ -34,12 +39,22 @@ import { AuditServiceFactory } from './factories/audit-service.factory';
       { name: AuditLogMongo.name, schema: AuditLogMongoSchema }
     ]),
     
+    // 스케줄링 모듈 (배치 처리 및 자동 정리용)
+    ScheduleModule.forRoot(),
+    
     ConfigModule
+  ],
+  controllers: [
+    AuditMonitoringController, // 감사 로그 모니터링 API
   ],
   providers: [
     // 구체적인 구현체들
     PostgresAuditService,
     MongoAuditService,
+    
+    // Phase 3에서 추가된 고급 기능들
+    AuditBatchProcessorService, // 배치 처리 서비스
+    AuditCleanupService,        // 자동 정리 서비스
     
     // 팩토리를 통한 동적 서비스 생성
     {
@@ -59,6 +74,8 @@ import { AuditServiceFactory } from './factories/audit-service.factory';
     'AuditService', // 하위 호환성
     PostgresAuditService,
     MongoAuditService,
+    AuditBatchProcessorService, // 다른 모듈에서 배치 처리 사용 가능
+    AuditCleanupService,       // 다른 모듈에서 정리 기능 사용 가능
   ],
 })
 export class AuditModule {}
