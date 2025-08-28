@@ -4,11 +4,11 @@
  */
 
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
-import { UserService } from './modules/user/user.service';
-import { ItemService } from './modules/item/item.service';
-import { OrderService } from './modules/order/order.service';
-import { InventoryService } from './modules/inventory/inventory.service';
+import { AppModule } from '../app.module';
+import { UserService } from '../modules/user/user.service';
+import { ItemService } from '../modules/item/item.service';
+import { OrderService } from '../modules/order/order.service';
+import { InventoryService } from '../modules/inventory/inventory.service';
 
 async function testSagaFlow() {
   console.log('🚀 Saga Choreography 패턴 테스트 시작\n');
